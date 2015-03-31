@@ -1,0 +1,3 @@
+[submodule "deps/kubernetes"]
+	path = deps/kubernetes
+	url = https://github.com/GoogleCloudPlatform/kubernetes
