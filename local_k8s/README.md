@@ -21,6 +21,15 @@ It may take a minute or two for k8s to build inside the container.  Use `$ docke
   cluster/kubectl.sh
   ```
 
+If the startup process fails with something like
+
+   ```
+   !!! Error in /opt/kubernetes/hack/local-up-cluster.sh:33
+   '${DOCKER[@]} ps 2> /dev/null > /dev/null' exited with status 1
+   ```
+
+in the logs, then use `$ docker ps -a` to find and delete any containers using the `local_k8s` image.
+
 2. Start a shell inside the container: 
 
     ```$ ./setup.py --test-shell```
@@ -37,6 +46,12 @@ Wait for k8s to deploy nginx.  Poll `% cluster/kubectl.sh get pods` until the po
 Now see if you can see the nginx welcome page: `% curl http://10.0.0.2:80`
 
 4. To remove the test cluster, use `$ ./setup.py --rm`
+
+# Troubleshooting
+
+In this local setup, Kubernetes and Docker may try to claim IP addresses in the
+same range.  You may need to change `hack/local-up-cluster.sh` to use `--portal_net="10.100.0.0/16"` as noted
+in [the k8s docs](https://github.com/GoogleCloudPlatform/kubernetes/blob/master/docs/getting-started-guides/locally.md#i-cant-reach-service-ips-on-the-network).
 
 # References
 * https://github.com/ghodss/kubernetes-macosx-development
