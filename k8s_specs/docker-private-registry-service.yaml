@@ -1,0 +1,9 @@
+kind: Service
+apiVersion: v1beta3
+metadata:
+  name: docker-private-registry
+spec:
+  ports:
+    - port: 5000
+  selector:
+    role: docker-private-registry

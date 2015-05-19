@@ -1,0 +1,14 @@
+apiVersion: v1beta3
+kind: Pod
+metadata:
+  name: docker-private-registry
+spec:
+  containers:
+  - name: docker-private-registry
+    resources:
+      limits:
+        cpu: "1"      
+    image: registry:2.0
+    ports:
+    - name: docker-registry
+      containerPort: 5000

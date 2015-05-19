@@ -8,3 +8,5 @@ Test
 * ClusterPG runs itself in that container !  mount and copy options
 * once there, ClusterPG will run your cluster up and down scripts, which probably just wrap k8s configs.  should run those scripts in a virtualenv with cpg lib code available...
 
+
+
