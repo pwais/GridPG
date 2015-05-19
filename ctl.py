@@ -95,9 +95,7 @@ if __name__ == '__main__':
     # Build k8s
     if not os.path.exists('deps/kubernetes/_output'):
       run_in_shell(
-        "cd deps/kubernetes && "
-        "./build/run.sh hack/build-go.sh && "
-        "./build/run.sh hack/test-go.sh")
+        "cd deps/kubernetes && make quick-release")
 
   if opts.clean:
     run_in_shell("rm -rf deps/kubernetes/_output")

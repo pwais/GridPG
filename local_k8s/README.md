@@ -1,57 +1,54 @@
 # Local k8s
-A Docker container for running `kubernetes` locally.  Useful for testing
-a cluster of containers before deploying to paid cloud service.
+A Docker container for running `kubernetes` locally via docker-in-docker.  Useful
+for testing a cluster of containers before deploying to paid cloud service.
 
-To use, run `$ ./setup.py --build`
+To use, run `$ ./dk8s.py --build && ./dk8s.py --up && ./dk8s.py --shell`
 
-# Testing the Container
+# Using the Container
 
-1. Start a test container:
+1. Build the dk8s image:
 
-    ```$ ./setup.py --test```
+	```$ ./dk8s.py --build```
 
-It may take a minute or two for k8s to build inside the container.  Use `$ docker logs local_k8s_test` to follow along.  Wait until you see a message like:
-  
-  ```
-  To start using your cluster, open up another terminal/tab and run:
+It may take a minute or two for k8s to compile.  
 
-  cluster/kubectl.sh config set-cluster local --server=http://127.0.0.1:8080 --insecure-skip-tls-verify=true --global
-  cluster/kubectl.sh config set-context local --cluster=local --global
-  cluster/kubectl.sh config use-context local
-  cluster/kubectl.sh
-  ```
+2. Start up a dk8s instance:
 
-If the startup process fails with something like
+	```$ ./dk8s.py --up```
 
-   ```
-   !!! Error in /opt/kubernetes/hack/local-up-cluster.sh:33
-   '${DOCKER[@]} ps 2> /dev/null > /dev/null' exited with status 1
-   ```
+Follow along (and look for errors) using `$ docker logs dk8s`.
 
-in the logs, then use `$ docker ps -a` to find and delete any containers using the `local_k8s` image.
+3. Log in to the instance:
 
-2. Start a shell inside the container: 
-
-    ```$ ./setup.py --test-shell```
-
-3. Try running nginx.  First start nginx through k8s:
+    ```$ ./dk8s.py --shell```
+    
+Optional: try running nginx.  First start nginx through k8s:
 
   ```
   % cd /opt/kubernetes
-  % cluster/kubectl.sh run-container my-nginx --image=dockerfile/nginx --replicas=2 --port=80
+  % cluster/kubectl.sh run-container my-nginx --image=nginx --replicas=2 --port=80
   ```
 
 Wait for k8s to deploy nginx.  Poll `% cluster/kubectl.sh get pods` until the pods' status is in the `Running` state.
 
 Now see if you can see the nginx welcome page: `% curl http://10.0.0.2:80`
-
-4. To remove the test cluster, use `$ ./setup.py --rm`
+or `lynx http://10.0.0.2:80`
+    
+4. Finally, you can kill the container using `$ ./dk8s.py --rm`
 
 # Troubleshooting
 
-In this local setup, Kubernetes and Docker may try to claim IP addresses in the
-same range.  You may need to change `hack/local-up-cluster.sh` to use `--portal_net="10.100.0.0/16"` as noted
-in [the k8s docs](https://github.com/GoogleCloudPlatform/kubernetes/blob/master/docs/getting-started-guides/locally.md#i-cant-reach-service-ips-on-the-network).
+Docker-in-docker is prone to ip loopback device exhaustion.  We try to ameliorate
+the issue by creating more loops in `startup.sh`, but you might still see
+the inner docker daemon fail to start (with message "no more loopback devices" 
+in `/var/log/docker.log`).  Try cleaning up your host's docker environment:
+delete old (stopped) containers (e.g. ``` docker rm `docker ps --no-trunc -aq` ```),
+restart your host's docker daemon, or restart boot2docker (e.g. if you're using OSX).
+
+There was a prior issue where Kubernetes and Docker may try to claim IP addresses in the
+same range.  In that case, you may need to edit `.kubernetes/hack/local-up-cluster.sh` to use `--portal_net="10.100.0.0/16"` as noted
+in [the k8s docs](https://github.com/GoogleCloudPlatform/kubernetes/blob/master/docs/getting-started-guides/locally.md#i-cant-reach-service-ips-on-the-network) and 
+then rebuild the dk8s container using `./dk8s.py --build`.
 
 # References
 * https://github.com/ghodss/kubernetes-macosx-development
