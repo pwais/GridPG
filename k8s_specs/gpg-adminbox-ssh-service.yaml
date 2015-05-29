@@ -1,0 +1,14 @@
+kind: Service
+apiVersion: v1beta3
+metadata:
+  labels:
+    name: gpg-adminbox-ssh
+  name: gpg-adminbox-ssh
+spec:
+  ports:
+    - name: adminbox-ssh
+      port: 10022
+      targetPort: 10022
+  selector:
+    name: gpg-adminbox
+  createExternalLoadBalancer: true

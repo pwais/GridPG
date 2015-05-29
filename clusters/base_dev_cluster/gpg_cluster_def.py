@@ -12,22 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 class Cluster(object):
   
-  def before_up(self):
-    print "moof!!"
+  @staticmethod
+  def before_up(ctx):
+#     ctx.run_in_shell(ctx.gpg_path("ctl.py") + " --adminbox-build")
+
+    config_dest = os.path.join(ctx.k8s_path, "cluster/gce/gpg-config.sh")
+    ctx.run_in_shell("cp -v " + ctx.cluster_path("kube_config.sh") + " " + config_dest)
   
-  def k8s_up_env(self):
+  @staticmethod
+  def k8s_up_env(ctx):
     return {
-      "moof": "moooof"
+      "KUBE_CONFIG_FILE": "gpg-config.sh",
     }
   
   @staticmethod
-  def k8s_create_defs(c):
-    return (
-      c.gpg_path("k8s_specs/docker-private-registry.yaml"),
-      c.gpg_path("k8s_specs/docker-private-registry-service.yaml"),
-    )
-    
-  def after_up(self):
-    print "moooof!"
+  def after_up(ctx):
+    pass
+#     CV_PATH = ctx.cluster_path(".CassieVede")
+#     ctx.push_to_remote_docker_registry("cassievedebox")
+  
+  #cluster/kubectl.sh get pods -o json

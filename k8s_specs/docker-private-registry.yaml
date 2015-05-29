@@ -1,6 +1,8 @@
 apiVersion: v1beta3
 kind: Pod
 metadata:
+  labels:
+    name: docker-private-registry
   name: docker-private-registry
 spec:
   containers:

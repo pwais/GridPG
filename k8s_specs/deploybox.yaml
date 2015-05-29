@@ -1,0 +1,22 @@
+apiVersion: v1beta3
+kind: Pod
+metadata:
+  name: deploybox
+spec:
+  containers:
+  - name: deploybox
+    resources:
+      limits:
+        cpu: "1"      
+    image: 10.0.156.130:5000/ubuu2 #pwais/hack
+    ports:
+    - name: ssh
+      containerPort: 22
+      protocol: tcp
+#    volumeMounts:
+#      - name: secret-vol
+#        mountPath: /etc/secret-vol
+#  volumes:
+#  - name: secret-vol
+#    secret:
+#      secretName: adminbox-ssh
