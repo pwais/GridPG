@@ -1,0 +1,14 @@
+apiVersion: v1beta3
+kind: Service
+metadata: 
+  labels: 
+    name: cv
+  name: cv
+spec: 
+  ports:
+    - port: 9042
+      targetPort: 9042
+    - port: 9160
+      targetPort: 9160
+  selector: 
+    name: cassandra

@@ -1,0 +1,18 @@
+apiVersion: v1beta3
+kind: Pod
+metadata:
+  labels:
+    name: spark-master
+  name: spark-master
+spec:
+  containers:
+  - name: spark-master
+    resources:
+      limits:
+        cpu: "1"
+    image: docker-private-registry/cv_spark
+    args:
+      - /start_master.sh
+    ports:
+    - name: spark-master
+      containerPort: 7077

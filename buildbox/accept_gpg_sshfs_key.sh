@@ -29,5 +29,8 @@ chmod 600 /root/.ssh/id_dsa_gpg_sshfs.pub
 cat /root/.ssh/id_dsa_gpg_sshfs.pub > /root/.ssh/authorized_keys
 
 echo "AuthorizedKeysFile /root/.ssh/authorized_keys" >> /etc/ssh/sshd_config
+echo "We will listen for these keys on port 30022"
+echo "Port 30022" >> /etc/ssh/sshd_config
+
 service ssh restart
 

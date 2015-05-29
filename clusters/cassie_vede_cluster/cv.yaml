@@ -1,0 +1,37 @@
+apiVersion: v1beta3
+kind: Pod
+metadata:
+  labels:
+    name: cv
+  name: cv
+spec:
+  containers:
+  - image: docker-private-registry/cv_cassandra
+    name: cassandra
+    ports:
+    - name: cql
+      containerPort: 9042
+    - name: thrift
+      containerPort: 9160
+    volumeMounts:
+    - name: data
+      mountPath: /cassandra_data
+    env:
+    - name: MAX_HEAP_SIZE
+      value: 512M
+    - name: HEAP_NEWSIZE
+      value: 100M
+    - name: KUBERNETES_API_PROTOCOL
+      value: http
+  - image: docker-private-registry/cv_spark
+    args:
+    - /start_worker.sh
+    name: spark-worker
+    ports:
+    - name: spark-workerui
+      containerPort: 8888
+  volumes:
+    - name: data
+      emptyDir: {}
+
+    

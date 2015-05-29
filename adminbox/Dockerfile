@@ -12,16 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO for remote use, let's make a busybox that has core stuff like ssh and docker
-FROM ubuntu:trusty
-
-RUN apt-get update
-
-# Core
-RUN apt-get install -y python2.7 python-pip curl wget git
-
-# Utils
-RUN apt-get install -y iftop screen time sshfs sudo lsof s3cmd vim 
+FROM gpg-buildbox
 
 # AWS
 RUN echo "moof"
@@ -76,18 +67,3 @@ RUN gcloud components update preview
 RUN gcloud components update alpha
 RUN gcloud components update
 
-# Docker
-RUN wget -qO- https://get.docker.com/ | sh
-
-# SSH
-RUN apt-get -y install openssh-server
-
-ADD build_k8s.sh /opt/build_k8s.sh
-RUN chmod a+x /opt/build_k8s.sh
-
-ADD accept_gpg_sshfs_key.sh /opt/accept_gpg_sshfs_key.sh
-RUN chmod a+x /opt/accept_gpg_sshfs_key.sh
-
-ADD startup.sh /opt/startup.sh
-RUN chmod a+x /opt/startup.sh
-CMD /opt/startup.sh

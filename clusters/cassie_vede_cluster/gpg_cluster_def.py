@@ -30,11 +30,31 @@ class Cluster(object):
   @staticmethod
   def k8s_create_defs(ctx):
     return (
+      # Use base buildbox
       ctx.gpg_path("k8s_specs/docker-private-registry.yaml"),
       ctx.gpg_path("k8s_specs/docker-private-registry-service.yaml"),
       ctx.gpg_path("k8s_specs/gpg-buildbox.yaml"))
   
-  
   @staticmethod
   def after_up(ctx):
     ctx.buildbox_sshfs_remote_mount("/opt/GridPG", "/opt/GridPG")
+    
+    ctx.log.info("Building CassieVede ...")
+    ctx.buildbox_docker_build(ctx.cluster_path("cv_cassandra"), "cv_cassandra")
+    ctx.buildbox_docker_build(ctx.cluster_path("cv_spark"), "cv_spark")
+    ctx.buildbox_push_to_private_reg("cv_spark")
+    ctx.buildbox_push_to_private_reg("cv_cassandra")
+    ctx.log.info("... done building.")
+    
+    ctx.log.info("Starting CassieVede in k8s ...")
+    cv_def_paths = (
+      ctx.cluster_path("spark-master.yaml"),
+      ctx.cluster_path("spark-master-service.yaml"),
+      ctx.cluster_path("cv-controller.yaml"),
+#       ctx.cluster_path("cv.yaml"), TODO do we need this?
+      ctx.cluster_path("cv-service.yaml"))
+    for path in cv_def_paths:
+      ctx.run_in_k8s("./cluster/kubectl.sh create -f " + path)
+    ctx.log.info("... created k8s components ...")
+    
+    # TODO: check service health
