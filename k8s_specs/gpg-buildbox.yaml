@@ -2,8 +2,8 @@ apiVersion: v1beta3
 kind: Pod
 metadata:
  name: gpg-buildbox
-  labels:
-    name: gpg-buildbox
+ labels:
+  name: gpg-buildbox
 spec:
   containers:
   - name: gpg-buildbox
@@ -15,7 +15,7 @@ spec:
     ports:
     - name: ssh
       containerPort: 22
-      hostPort: 10022
+      hostPort: 30022
       protocol: tcp
     # A fix to run docker (daemon) in docker: -v /dev:/dev
     # But we just run using the host's docker: -v /var/run/docker.sock:/var/run/docker.sock

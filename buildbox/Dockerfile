@@ -31,6 +31,9 @@ RUN apt-get -y install openssh-server
 ADD accept_gpg_sshfs_key.sh /opt/accept_gpg_sshfs_key.sh
 RUN chmod a+x /opt/accept_gpg_sshfs_key.sh
 
+# We'll use this port for sshfs
+EXPOSE 30022 
+
 ADD startup.sh /opt/startup.sh
 RUN chmod a+x /opt/startup.sh
 CMD /opt/startup.sh

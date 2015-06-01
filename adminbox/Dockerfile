@@ -15,7 +15,6 @@
 FROM gpg-buildbox
 
 # AWS
-RUN echo "moof"
 RUN apt-get install -y groff unzip
 WORKDIR /tmp
 RUN curl "https://s3.amazonaws.com/aws-cli/awscli-bundle.zip" -o "awscli-bundle.zip"
@@ -66,4 +65,9 @@ RUN git clone --branch release-0.17 --depth 1  https://github.com/GoogleCloudPla
 RUN gcloud components update preview
 RUN gcloud components update alpha
 RUN gcloud components update
+
+ADD build_k8s.sh /opt/build_k8s.sh
+CMD chmod a+x /opt/build_k8s.sh
+
+CMD /opt/startup.sh
 

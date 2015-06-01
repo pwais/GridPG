@@ -16,12 +16,29 @@
 
 set -o errexit
 set -o nounset
-set -o pipefail
 set -x
 
 echo "Allowing privileged containers"
 mv /opt/kubernetes/cluster/saltbase/pillar/privilege.sls{,.original}
 echo "allow_privileged: true" > /opt/kubernetes/cluster/saltbase/pillar/privilege.sls
+
+# TODO: try /var/run/docker.sock mount with boot2docker
+docker ps || service docker start
+
+COUNTER=0
+LIMIT=10
+while ! docker ps -a
+do
+  echo "$(date) - waiting for docker"
+  tail -n10 /var/log/docker.log
+  sleep 1
+  let COUNTER=COUNTER+1
+  if [ $COUNTER -eq $LIMIT ]; then
+    echo "Could not start Docker; see /var/log/docker.log"
+    exit 1
+  fi
+done
+echo "$(date) - Docker up!"
 
 yes | KUBE_RELEASE_RUN_TESTS=n /opt/kubernetes/build/release.sh
 

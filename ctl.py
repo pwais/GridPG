@@ -23,12 +23,13 @@ import subprocess
 import time
 from optparse import OptionParser
 from optparse import OptionGroup
-from twisted.internet.iocpreactor.const import WAIT_TIMEOUT
 
 USAGE = (
 """%prog [options]
  
  TODO
+ on local machine: --build-and-admin (drop to docker)
+ inside local docker: --up (create k8s, start sshfs ...)
  
  * Requires local docker
  * Requires network access for --deps
@@ -45,9 +46,9 @@ console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
 log.addHandler(console_handler)
 
 def run_in_shell(cmd):
-    log.info("Running %s ..." % cmd)
-    subprocess.check_call(cmd, shell=True)
-    log.info("... done")
+  log.info("Running %s ..." % cmd)
+  subprocess.check_call(cmd, shell=True)
+  log.info("... done")
 
 
 
@@ -72,6 +73,8 @@ class EmptyCluterDef(object):
   @staticmethod
   def after_up(ctx):
     return None
+
+
 
 class ClusterContext(object):
   
@@ -102,8 +105,11 @@ class ClusterContext(object):
     r = json.load(p.stdout)
     return r
   
-  def run_in_k8s(self, cmd):
-    return run_in_shell("cd " + self.k8s_path + " && " + cmd)
+  def run_in_k8s(self, cmd, redacted=False):
+    if redacted:
+      return self.run_in_shell_redacted("cd " + self.k8s_path + " && " + cmd)
+    else:
+      return self.run_in_shell("cd " + self.k8s_path + " && " + cmd)
   
   def exec_in_buildbox(self, cmd, redacted=False):
     POD = "gpg-buildbox"
@@ -112,10 +118,7 @@ class ClusterContext(object):
     buildbox_host = self._buildbox_host
     EXEC_IN_BUILDBOX = (
       'cluster/kubectl.sh exec -p ' + POD + ' -c ' + POD + ' -- ')
-    if redacted:
-      self.run_in_shell_redacted(EXEC_IN_BUILDBOX + cmd)
-    else:
-      self.run_in_shell(EXEC_IN_BUILDBOX + cmd)
+    self.run_in_k8s(EXEC_IN_BUILDBOX + cmd, redacted=redacted)
   
   def gpg_path(self, path):
     return os.path.join(self.gpg_base_path, path)
@@ -172,14 +175,16 @@ class ClusterContext(object):
       log.debug("k8s response: %s" % r)
             
       conds = r.get("status", {}).get("Condition", [])
-      for c in cond:
-        if c.get("type") == "Ready" and c.get("status") == "True":
-          running = True
-          break
+      running |= any(
+        c.get("type") == "Ready" and c.get("status") == "True"
+        for c in conds)
+      if running:
+        break
       
       log.info(
         "... pod " + pod_name + " not running " +
-        "(status " + str(conds)  + "), waiting ...")
+        "(status " + str(conds)  + "), waiting " +
+        "(" + str(waited) + " of " + str(max_wait_sec) + ") sec ...")
       WAIT_TIME_SEC = 3
       time.sleep(WAIT_TIME_SEC)
       waited += WAIT_TIME_SEC
@@ -238,7 +243,7 @@ class ClusterContext(object):
       log.info("Running cluster setup ...")
       self.c.before_up(self)
       log.info("... done.")
-    
+     
     # Start the cluster
     env = {"KUBERNETES_PROVIDER": self.provider}
     if hasattr(self.c, "k8s_up_env"):
@@ -248,13 +253,13 @@ class ClusterContext(object):
     log.info("Starting cluster ...")
     self.run_in_k8s(cmd)
     log.info("... done.")
-    
+     
     # Prepare to create pods
     if hasattr(self.c, "before_create_defs"):
       log.info("Running post-up setup ...")
       env.update(self.c.before_create_defs(self))
       log.info("... done.")
-    
+     
     # Create k8s entities
     log.info("Creating k8s entities ...")
     k8s_defs = tuple()
@@ -267,10 +272,10 @@ class ClusterContext(object):
     # Post-create setup
     if hasattr(self.c, "after_up"):
       log.info("Running post-cluster setup ...")
-      env.update(self.c.after_up(self))
+      self.c.after_up(self)
       log.info("... done.")
 
-    self.run_in_k8s("./cluster/kubectl.sh get pods")
+    log.info("Cluster up!!")
 
   def down(self):
     self.run_in_k8s("./cluster/kube-down.sh")
@@ -282,13 +287,13 @@ class ClusterContext(object):
     log.info("Mounting " + local_path + " to remote buildbox via sshfs ...")
     ssh_key_path = "/root/.ssh/id_dsa_gpg_sshfs"
     ssh_key_pub_path = "/root/.ssh/id_dsa_gpg_sshfs.pub"
-    if not os.path.exists(ssh_key):
+    if not os.path.exists(ssh_key_path):
       log.info("... generating new ssk key for buildbox ...")
       self.run_in_shell("ssh-keygen -t dsa -P '' -f " + ssh_key_path)
       log.info("... authorizing locally ...")
       self.run_in_shell("/opt/accept_gpg_sshfs_key.sh")
     
-    log.info("... installing ssh keys on buildbox... ")
+    log.info("... installing ssh keys on buildbox (cmd will be redacted) ... ")
     self.exec_in_buildbox('mkdir -p /root/.ssh')
     for path in (ssh_key_path, ssh_key_pub_path):
       content = open(path, 'r').read()
@@ -296,7 +301,7 @@ class ClusterContext(object):
       # NB: also, we use echo here because, sadly, cat | kubcetl -- tee
       # doesn't work-- it blocks indefinitely (looks like a Golang / k8s bug) 
       self.exec_in_buildbox(
-        'sh -c "echo \"' + content +  '\" > ' + path + ' "', redacted=True)
+        'sh -c "echo \'' + content +  '\' > ' + path + ' "', redacted=True)
     
     log.info("... authorizing copied key and bouncing sshd ...")
     self.exec_in_buildbox('/opt/accept_gpg_sshfs_key.sh')
@@ -326,8 +331,9 @@ class ClusterContext(object):
         "Don't know how to add firewall rule for provider %s" % self.provider)  
     
     log.info("... testing ssh ...")
+    BUILDBOX_HOST = self.get_pod_host("gpg-buildbox")
     SSH_CMD_BASE = (
-      "ssh " + buildbox_host + " -p " + SSH_PORT + " -i  " + ssh_key_path + " ")
+      "ssh " + BUILDBOX_HOST + " -p " + SSH_PORT + " -i  " + ssh_key_path + " ")
     self.run_in_shell(SSH_CMD_BASE + "uptime")
       
     log.info("... starting tunneled sshfs ...")
@@ -336,11 +342,11 @@ class ClusterContext(object):
     self.exec_in_buildbox("mkdir -p " + remote_path)
     self.run_in_shell(
       SSH_CMD_BASE +
-      # Forward local SSH_PORT remotely as port 30020
-      "-nT -R 30020:localhost:" + SSH_PORT +
+      # Forward local SSH_PORT remotely as port 9900
+      "-nT -R 9900:localhost:" + SSH_PORT +
       # Have remote host sshfs back to our local machine through the
       # forwarded 30020 port.  Use our special purpose ssh key.
-      " -- sshfs -p 30020 -o IdentityFile=/root/.ssh/id_dsa_gpg_hfs " +
+      " -- sshfs -p 9900 -o IdentityFile=/root/.ssh/id_dsa_gpg_sshfs " +
       # Tell sshfs to mount `local_path` (read from the forwarded 30020 port)
       # to `remote_path` on the remote host
       "localhost:" + local_path + " " + remote_path +" &")
@@ -414,6 +420,12 @@ if __name__ == "__main__":
   adminbox_group.add_option(
     "--adminbox-build", default=False, action="store_true",
     help="Build the gpg-adminbox image")
+  adminbox_group.add_option(
+    "--adminbox-start", default=False, action="store_true",
+    help="Start a gpg-adminbox container")
+  adminbox_group.add_option(
+    "--adminbox-rm", default=False, action="store_true",
+    help="Remove the gpg-adminbox container")
   adminbox_group.add_option(
     "--in-adminbox", default=False, action="store_true",
     help="Drop into a Dockerized adminbox shell")
@@ -508,16 +520,23 @@ if __name__ == "__main__":
   if opts.adminbox_build:
     run_in_shell("cd adminbox && docker build -t " + opts.adminbox_tag + " .")
 
-  if opts.in_adminbox:
+  if opts.adminbox_start or opts.in_adminbox:
     run_in_shell(
-      "docker run -d --net=host --name=gpg-adminbox -P " +
+      "docker run -d --net=host --name=gpg-adminbox -p 30022:30022 " +
       "--privileged " +
       "-v " + os.path.abspath(".") + ":/opt/GridPG " +
-      "-w /opt/GridPG " +
-      opts.adminbox_tag + " bash")
+      "-w /opt/GridPG " + opts.adminbox_tag)
+    log.info("Building k8s ...")
+    run_in_shell("docker exec gpg-adminbox /opt/build_k8s.sh")
+    log.info("... done building k8s")
+  
+  if opts.in_adminbox:  
     docker_cmd = "docker exec -it gpg-adminbox bash"
     log.info("Dropping into shell: " + docker_cmd)
     os.execvp("docker", docker_cmd.split(" "))
+
+  if opts.adminbox_rm:
+    run_in_shell("docker kill gpg-adminbox && docker rm gpg-adminbox")
 
   if opts.up or opts.down:
     c = ClusterContext.load_from(opts.cluster)
