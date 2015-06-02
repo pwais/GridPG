@@ -31,6 +31,8 @@ USAGE = (
  on local machine: --build-and-admin (drop to docker)
  inside local docker: --up (create k8s, start sshfs ...)
  
+ TODO: also mount k8s in docker so we save build. or make build deps..
+ 
  * Requires local docker
  * Requires network access for --deps
  * Tested in Python 2.7
@@ -63,10 +65,6 @@ class EmptyCluterDef(object):
     return {}
   
   @staticmethod
-  def before_create_defs(ctx):
-    return None
-  
-  @staticmethod
   def k8s_create_defs(ctx):
     return tuple()
   
@@ -80,36 +78,49 @@ class ClusterContext(object):
   
   gpg_base_path = os.path.abspath(".")
   
-  def __init__(self, c_cls, gpg_cluster_path=None):  
-    self.gpg_cluster_path = gpg_cluster_path
+  def __init__(self, c_cls, opts):
     self.c = c_cls()
-    self.provider = "gce"
-    self.k8s_path = "/opt/kubernetes"
+    self.opts = opts
     self.log = log
   
-  ### Utils
   
-  @classmethod
-  def run_in_shell(cls, cmd):
+  ###
+  ### Utils
+  ###
+  
+  def run_in_shell(self, cmd):
     return run_in_shell(cmd)
   
-  @classmethod
-  def run_in_shell_redacted(cls, cmd):
+  def run_in_shell_redacted(self, cmd):
     log.info("Running a redacted command... ")
     subprocess.check_call(cmd, shell=True)
     log.info("... done.")
   
-  @classmethod
-  def run_and_get_json(cls, cmd):
+  def run_and_get_txt(self, cmd):
     p = subprocess.Popen(cmd.split(" "), stdout=subprocess.PIPE)
-    r = json.load(p.stdout)
-    return r
+    out = p.stdout.read()
+    return out
+  
+  def run_and_get_json(self, cmd):
+    return json.loads(self.run_and_get_txt(cmd))
   
   def run_in_k8s(self, cmd, redacted=False):
     if redacted:
-      return self.run_in_shell_redacted("cd " + self.k8s_path + " && " + cmd)
+      return self.run_in_shell_redacted("cd " + self.opts.k8s_path + " && " + cmd)
     else:
-      return self.run_in_shell("cd " + self.k8s_path + " && " + cmd)
+      return self.run_in_shell("cd " + self.opts.k8s_path + " && " + cmd)
+  
+  def run_k8s_create_def(self, path):
+    spec = open(path, 'r').read()
+    DPR_TOKEN = "%%docker-private-registry%%"
+    if DPR_TOKEN in spec:
+      private_registry = self.get_docker_private_registry()
+      spec.replace(DPR_TOKEN, private_registry + ":5000")
+    kubectl = os.path.join(self.opts.k8s_path, "cluster/kubectl.sh")
+    cmd = kubectl + " create -f -"
+    p = subprocess.Popen(cmd.split(" "), stdin=subprocess.PIPE)
+    p.stdin.write(spec)
+    p.stdin.flush()
   
   def exec_in_buildbox(self, cmd, redacted=False):
     POD = "gpg-buildbox"
@@ -124,14 +135,14 @@ class ClusterContext(object):
     return os.path.join(self.gpg_base_path, path)
   
   def cluster_path(self, path):
-    return os.path.abspath(os.path.join(self.gpg_cluster_path, path))
+    return os.path.abspath(os.path.join(self.opts.cluster, path))
   
   def get_pod_host(self, pod_name, wait=True):
     log.info("Finding pod " + pod_name + " ...")
     if wait:
       assert self.wait_for_pod(pod_name)
     
-    kubectl = os.path.join(self.k8s_path, "cluster/kubectl.sh")
+    kubectl = os.path.join(self.opts.k8s_path, "cluster/kubectl.sh")
     r = self.run_and_get_json(kubectl + " get pod " + pod_name + " -o json")
     if r.get("kind") != "Pod":
       log.warn("Did not get pod: %s" % r) 
@@ -149,7 +160,7 @@ class ClusterContext(object):
   def get_service_ip(self, service_name):
     log.info("Finding service " + service_name + " ...")
     
-    kubectl = os.path.join(self.k8s_path, "cluster/kubectl.sh")
+    kubectl = os.path.join(self.opts.k8s_path, "cluster/kubectl.sh")
     r = self.run_and_get_json(kubectl + " get service " + service_name + " -o json")
     if r.get("kind") != "Service":
       log.warn("Did not get service: %s" % r) 
@@ -167,7 +178,7 @@ class ClusterContext(object):
   def wait_for_pod(self, pod_name, max_wait_sec=300):
     log.info("Waiting for pod " + pod_name + " ...")
       
-    kubectl = os.path.join(self.k8s_path, "cluster/kubectl.sh")
+    kubectl = os.path.join(self.opts.k8s_path, "cluster/kubectl.sh")
     running = False
     waited = 0
     while not running:
@@ -200,15 +211,14 @@ class ClusterContext(object):
     log.info("... pod " + pod_name + " up!")
     return True
   
-#   def get_docker_private_registry(self):
-#     if not hasattr(self, '_docker_reg_host'):
-#       log.info("Finding docker-private-registry ...")
-#       self._docker_reg_host = self.get_service_ip("docker-private-registry")
-#     return self._docker_reg_host
+  def get_docker_private_registry(self):
+    if not hasattr(self, '_registry'):
+      self._registry = self.get_pod_host("docker-private-registry")
+    return self._registry
   
   def push_to_remote_docker_registry(self, tag, reg_host=None):
     if not reg_host:
-      reg_host = "docker-private-registry"
+      reg_host = self.get_docker_private_registry()
     
     self.run_in_shell("docker tag " + tag + " " + reg_host + ":5000/" + tag)
     self.run_in_shell("docker push " + reg_host + ":5000/" + tag)
@@ -222,96 +232,55 @@ class ClusterContext(object):
     self.exec_in_buildbox(
       'sh -c "cd ' + remote_path + ' && docker build -t ' + tag + ' ."')
   
-  ### Actions
+  ###
+  ### Buildbox SSH
+  ###
   
-  @staticmethod
-  def load_from(dir_path):
-    assert os.path.exists(dir_path), "No cluster directory: %s" % dir_path
-    f, fname, desc = imp.find_module("gpg_cluster_def", [dir_path])
-    try:
-      gpg_cluster_def = imp.load_module("gpg_cluster_def", f, fname, desc)
-      log.info("Loaded cluster from %s" % dir_path)
-    finally:
-      f.close()
-    
-    return ClusterContext(gpg_cluster_def.Cluster, gpg_cluster_path=dir_path)
-    
-  def up(self):
-    
-    # Prepare
-    if hasattr(self.c, "before_up"):
-      log.info("Running cluster setup ...")
-      self.c.before_up(self)
-      log.info("... done.")
-     
-    # Start the cluster
-    env = {"KUBERNETES_PROVIDER": self.provider}
-    if hasattr(self.c, "k8s_up_env"):
-      env.update(self.c.k8s_up_env(self))
-    cmd = " ".join(k + "=" + v for (k, v) in env.iteritems())
-    cmd += " ./cluster/kube-up.sh"
-    log.info("Starting cluster ...")
-    self.run_in_k8s(cmd)
-    log.info("... done.")
-     
-    # Prepare to create pods
-    if hasattr(self.c, "before_create_defs"):
-      log.info("Running post-up setup ...")
-      env.update(self.c.before_create_defs(self))
-      log.info("... done.")
-     
-    # Create k8s entities
-    log.info("Creating k8s entities ...")
-    k8s_defs = tuple()
-    if hasattr(self.c, "k8s_create_defs"):
-      k8s_defs = k8s_defs + self.c.k8s_create_defs(self)
-    for path in k8s_defs:
-      self.run_in_k8s("./cluster/kubectl.sh create -f " + path)
-    log.info("... done.")
-
-    # Post-create setup
-    if hasattr(self.c, "after_up"):
-      log.info("Running post-cluster setup ...")
-      self.c.after_up(self)
-      log.info("... done.")
-
-    log.info("Cluster up!!")
-
-  def down(self):
-    self.run_in_k8s("./cluster/kube-down.sh")
+  # NB: We use a custom port so as to not interfere with host / k8s ssh
+  SSH_PORT = "30022"
+  SSH_KEY_PATH = "/root/.ssh/id_dsa_gpg_buldbox_ssh"
+  SSH_KEY_PUB_PATH = "/root/.ssh/id_dsa_gpg_buldbox_ssh.pub"
   
-  def buildbox_sshfs_remote_mount(self, local_path, remote_path=None):
-    if not remote_path:
-      remote_path = local_path
+  def buildbox_enable_ssh(self):
+    self.log.info("Setting up ssh on buildbox ...")
     
-    log.info("Mounting " + local_path + " to remote buildbox via sshfs ...")
-    ssh_key_path = "/root/.ssh/id_dsa_gpg_sshfs"
-    ssh_key_pub_path = "/root/.ssh/id_dsa_gpg_sshfs.pub"
-    if not os.path.exists(ssh_key_path):
+    created_new_keys = False
+    if not os.path.exists(self.SSH_KEY_PATH):
       log.info("... generating new ssk key for buildbox ...")
-      self.run_in_shell("ssh-keygen -t dsa -P '' -f " + ssh_key_path)
+      self.run_in_shell("ssh-keygen -t dsa -P '' -f " + self.SSH_KEY_PATH)
       log.info("... authorizing locally ...")
       self.run_in_shell("/opt/accept_gpg_sshfs_key.sh")
+      created_new_keys = True
     
-    log.info("... installing ssh keys on buildbox (cmd will be redacted) ... ")
-    self.exec_in_buildbox('mkdir -p /root/.ssh')
-    for path in (ssh_key_path, ssh_key_pub_path):
-      content = open(path, 'r').read()
-      # NB: we use sh -c to make the > redirect explicitly run *remotely*
-      # NB: also, we use echo here because, sadly, cat | kubcetl -- tee
-      # doesn't work-- it blocks indefinitely (looks like a Golang / k8s bug) 
-      self.exec_in_buildbox(
-        'sh -c "echo \'' + content +  '\' > ' + path + ' "', redacted=True)
-    
-    log.info("... authorizing copied key and bouncing sshd ...")
-    self.exec_in_buildbox('/opt/accept_gpg_sshfs_key.sh')
-    
-    # NB: We use a custom port so as to not interfere with host / k8s ssh
-    SSH_PORT = "30022"
+    has_keys = False
+#     if not created_new_keys: TODO: FIXME k8s does not prop exit code properly
+#       try:
+#         self.exec_in_buildbox('ls -lhat ' + self.SSH_KEY_PATH)
+#         self.exec_in_buildbox('ls -lhat ' + self.SSH_KEY_PUB_PATH)
+#         has_keys = True
+#         log.info(
+#           "... buildbox already has keys; to re-install "
+#           "rm -rf /root/.ssh/id_dsa_gpg_sshfs* in buildbox machine "
+#           "...")
+#       except Exception:
+#         pass
+      
+    if not has_keys:
+      log.info("... installing ssh keys on buildbox (cmd will be redacted) ... ")
+      self.exec_in_buildbox('mkdir -p /root/.ssh')
+      for path in (self.SSH_KEY_PATH, self.SSH_KEY_PUB_PATH):
+        content = open(path, 'r').read()
+        # NB: we use sh -c to make the > redirect explicitly run *remotely*
+        # NB: also, we use echo here because, sadly, cat | kubcetl -- tee
+        # doesn't work-- it blocks indefinitely (looks like a Golang / k8s bug) 
+        self.exec_in_buildbox(
+          'sh -c "echo \'' + content +  '\' > ' + path + ' "', redacted=True)
+      
+      log.info("... authorizing copied key and bouncing sshd ...")
+      self.exec_in_buildbox('/opt/accept_gpg_sshfs_key.sh')
     
     # TODO: can we make this provider agnostic eventually?
-    log.info("... adding firewall rule to open ssh ...")
-    if self.provider == "gce":
+    if self.opts.provider == "gce":
       RULE_NAME = "gpg-buildbox-ssh"
       rule_exists = False
       resp = self.run_and_get_json(
@@ -321,32 +290,56 @@ class ClusterContext(object):
           rule_exists = True
           break
       if not rule_exists:
+        log.info("... adding firewall rule to open ssh ...")
         self.run_in_shell(
           "gcloud compute firewall-rules create " + RULE_NAME +
-          " --allow=tcp:" + SSH_PORT)
-    elif self.provider == "aws":
+          " --allow=tcp:" + self.SSH_PORT)
+    elif self.opts.provider == "aws":
       assert False, "TODO TODO TODO"
     else:
       log.warn(
-        "Don't know how to add firewall rule for provider %s" % self.provider)  
+        "Don't know how to add firewall rule for provider " +
+        self.opts.provider)  
     
     log.info("... testing ssh ...")
     BUILDBOX_HOST = self.get_pod_host("gpg-buildbox")
     SSH_CMD_BASE = (
-      "ssh " + BUILDBOX_HOST + " -p " + SSH_PORT + " -i  " + ssh_key_path + " ")
+      "ssh -o StrictHostKeyChecking=no " + BUILDBOX_HOST + " " +
+      "-p " + self.SSH_PORT + " " +
+      "-i " + self.SSH_KEY_PATH + " ")
     self.run_in_shell(SSH_CMD_BASE + "uptime")
+    
+    self.log.info("... ssh available!")
+  
+  def buildbox_sshfs_remote_mount(self, local_path, remote_path=None):
+    if not remote_path:
+      remote_path = local_path
+    
+    self.buildbox_enable_ssh()
+    log.info("Mounting " + local_path + " to remote buildbox via sshfs ...")
       
     log.info("... starting tunneled sshfs ...")
     # We must create an empty directory for the mounted file system
-    # or sshfs will crash.  We'll 
+    # or sshfs will crash. 
+    try:
+      # Try to clean up after a previous sshfs attempt
+      self.exec_in_buildbox("umount " + remote_path)
+    except Exception:
+      pass
     self.exec_in_buildbox("mkdir -p " + remote_path)
+    BUILDBOX_HOST = self.get_pod_host("gpg-buildbox")
+    SSH_CMD_BASE = (
+      "ssh -o StrictHostKeyChecking=no " + BUILDBOX_HOST + " " +
+      "-p " + self.SSH_PORT + " "
+      "-i " + self.SSH_KEY_PATH + " ")
     self.run_in_shell(
       SSH_CMD_BASE +
       # Forward local SSH_PORT remotely as port 9900
-      "-nT -R 9900:localhost:" + SSH_PORT +
+      "-nT -R 9900:localhost:" + self.SSH_PORT +
       # Have remote host sshfs back to our local machine through the
       # forwarded 30020 port.  Use our special purpose ssh key.
-      " -- sshfs -p 9900 -o IdentityFile=/root/.ssh/id_dsa_gpg_sshfs " +
+      " -- sshfs -p 9900 -oIdentityFile=" + self.SSH_KEY_PATH + " " +
+      "-oStrictHostKeyChecking=no " +
       # Tell sshfs to mount `local_path` (read from the forwarded 30020 port)
       # to `remote_path` on the remote host
       "localhost:" + local_path + " " + remote_path +" &")
@@ -355,6 +348,82 @@ class ClusterContext(object):
     self.exec_in_buildbox("ls -lhat " + remote_path)
     
     log.info("... local path mounted remotely! Done!!")
+  
+  
+  ###
+  ### Actions
+  ###
+  
+  @staticmethod
+  def load_from(opts):
+    """Load and instantiate a ClusterContext from ctl.py `opts`"""
+    dir_path = opts.cluster
+    assert os.path.exists(dir_path), "No cluster directory: %s" % dir_path
+    f, fname, desc = imp.find_module("gpg_cluster_def", [dir_path])
+    try:
+      gpg_cluster_def = imp.load_module("gpg_cluster_def", f, fname, desc)
+      log.info("Loaded cluster from %s" % dir_path)
+    finally:
+      f.close()
+    
+    return ClusterContext(gpg_cluster_def.Cluster, opts)
+  
+  def run(self):
+    if self.opts.up:
+      self.opts.before_up = True
+      self.opts.k8s_up = True
+      self.opts.create_entities = True
+      self.opts.after_up = True
+
+    if self.opts.before_up:
+      if hasattr(self.c, "before_up"):
+        log.info("Running cluster setup ...")
+        self.c.before_up(self)
+        log.info("... done.")
+    
+    if self.opts.k8s_up:
+      env = {"KUBERNETES_PROVIDER": self.opts.provider}
+      if hasattr(self.c, "k8s_up_env"):
+        env.update(self.c.k8s_up_env(self))
+      cmd = " ".join(k + "=" + v for (k, v) in env.iteritems())
+      cmd += " ./cluster/kube-up.sh"
+      log.info("Starting cluster ...")
+      self.run_in_k8s(cmd)
+      log.info("... done.")
+     
+    if self.opts.create_entities:
+      log.info("Creating k8s entities ...")
+      k8s_defs = tuple()
+      if hasattr(self.c, "k8s_create_defs"):
+        k8s_defs = k8s_defs + self.c.k8s_create_defs(self)
+      for path in k8s_defs:
+        self.run_in_k8s("./cluster/kubectl.sh create -f " + path)
+      log.info("... done.")
+
+    if self.opts.after_up:
+      if hasattr(self.c, "after_up"):
+        log.info("Running post-cluster setup ...")
+        self.c.after_up(self)
+        log.info("... done.")
+
+    if self.opts.in_remote_buildbox:
+      self.buildbox_enable_ssh()
+      BUILDBOX_HOST = self.get_pod_host("gpg-buildbox")
+      cmd = (
+        "ssh -o StrictHostKeyChecking=no " + BUILDBOX_HOST +
+        " -p " + self.SSH_PORT +
+        " -i " + self.SSH_KEY_PATH)
+      log.info("Dropping remote shell: " + cmd)
+      os.execvp("ssh", cmd.split(" "))
+
+    if self.opts.down:
+      self.run_in_k8s("./cluster/kube-down.sh")
+  
+  
+  
+  
+    
+    
     
     # gcloud compute firewall-rules create --allow=tcp:10022 --target-tags=kubernetes-minion kubernetes-minion-10022
     
@@ -396,6 +465,10 @@ if __name__ == "__main__":
   config_group.add_option(
     "--buildbox-tag", default="gpg-buildbox",
     help="Give the buildbox image this tag [default %default]")
+  config_group.add_option(
+    "--registry", default=None,
+    help="Use this docker registry host. By default, use the cluster's "
+         "private registry.")
   option_parser.add_option_group(config_group)
   
   local_group = OptionGroup(
@@ -411,6 +484,10 @@ if __name__ == "__main__":
   local_group.add_option(
     "--build-and-admin", default=False, action="store_true",
     help="Build user host deps and drop into a user adminbox")
+  local_group.add_option(
+    "--interactive", default=False, action="store_true",
+    help="Drop into an interactive python session after running all other "
+         "actions")
   option_parser.add_option_group(local_group)
   
   adminbox_group = OptionGroup(
@@ -449,10 +526,28 @@ if __name__ == "__main__":
                     "Cluster Actions")
   cluster_group.add_option(
     "--up", default=False, action="store_true",
-    help="Bring the cluster up")
+    help="Bring the cluster up.  Equivalent to "
+         "--before-up --k8s-up --create-entities --after-up")
+  cluster_group.add_option(
+    "--before-up", default=False, action="store_true",
+    help="Run some actions before bringing up k8s")
+  cluster_group.add_option(
+    "--k8s-up", default=False, action="store_true",
+    help="Bring up (base) k8s")
+  cluster_group.add_option(
+    "--create-entities", default=False, action="store_true",
+    help="Bring up any k8s entities associated with the cluster "
+         "(e.g. pods, services)")
+  cluster_group.add_option(
+    "--after-up", default=False, action="store_true",
+    help="Run any post-creation actions (e.g. build steps)")
   cluster_group.add_option(
     "--down", default=False, action="store_true",
     help="Destroy the cluster")
+  cluster_group.add_option(
+    "--in-remote-buildbox", default=False, action="store_true",
+    help="SSH to the buildbox and drop into a bash shell.  "
+         "(Requires a running cluster)")
   option_parser.add_option_group(cluster_group)
   
   # -- Try adding --privileged to k8s conig (or CAP for mounting so DID works?)
@@ -482,9 +577,9 @@ if __name__ == "__main__":
   
   assert os.path.exists("LICENSE"), "Please run from root of a GridPG distro"
   
-  
   # Meta-opts
   if opts.build_and_admin:
+    opts.deps = True
     opts.buildbox_build = True
     opts.adminbox_build = True
     opts.in_adminbox = True
@@ -493,17 +588,18 @@ if __name__ == "__main__":
     # Pull git friends
     run_in_shell("git submodule update --init")
 
-#     # Build k8s
-#     run_in_shell("cd deps/kubernetes && make quick-release")
-#     
-#     log.info("Placing kubernetes for adminbox build ...")
-#     run_in_shell("cp -r deps/kubernetes adminbox/.kubernetes")
-#     log.info("... done.")
-#     log.info(
-#       "Nota bene: the k8s build process may leave behind some large "
-#       "(and dangling) docker images.  Run "
-#       "  docker rmi $(docker images -f \"dangling=true\" -q) "
-#       "to free up some disk space.")
+    # Build k8s
+    run_in_shell(
+      "cd deps/kubernetes && "
+      "mv cluster/saltbase/pillar/privilege.sls{,.original} && "
+      "echo \"Allowing privileged containers\" && "
+      "echo \"allow_privileged: true\" > cluster/saltbase/pillar/privilege.sls && "
+      "make quick-release")
+    log.info(
+      "Nota bene: the k8s build process may leave behind some large "
+      "(and dangling) docker images.  Run "
+      "  docker rmi $(docker images -f \"dangling=true\" -q) "
+      "to free up some disk space.")
 
   if opts.clean:
     run_in_shell("rm -rf deps/*")
@@ -525,10 +621,11 @@ if __name__ == "__main__":
       "docker run -d --net=host --name=gpg-adminbox -p 30022:30022 " +
       "--privileged " +
       "-v " + os.path.abspath(".") + ":/opt/GridPG " +
+      "-v " + os.path.abspath("deps/kubernetes") + ":/opt/kubernetes " +
       "-w /opt/GridPG " + opts.adminbox_tag)
-    log.info("Building k8s ...")
-    run_in_shell("docker exec gpg-adminbox /opt/build_k8s.sh")
-    log.info("... done building k8s")
+#     log.info("Building k8s ...")
+#     run_in_shell("docker exec gpg-adminbox /opt/build_k8s.sh")
+#     log.info("... done building k8s")
   
   if opts.in_adminbox:  
     docker_cmd = "docker exec -it gpg-adminbox bash"
@@ -538,12 +635,16 @@ if __name__ == "__main__":
   if opts.adminbox_rm:
     run_in_shell("docker kill gpg-adminbox && docker rm gpg-adminbox")
 
-  if opts.up or opts.down:
-    c = ClusterContext.load_from(opts.cluster)
-    c.provider = opts.provider
-    c.k8s_path = opts.k8s_path
-    
-    if opts.up:
-      c.up()
-    elif opts.down:
-      c.down()
+  c = ClusterContext.load_from(opts)
+  c.run()
+
+  if opts.interactive:
+    import code
+    import readline
+    import rlcompleter
+    vars = globals()
+    vars.update(locals())
+    readline.set_completer(rlcompleter.Completer(vars).complete)
+    readline.parse_and_bind("tab: complete")
+    shell = code.InteractiveConsole(vars)
+    shell.interact()

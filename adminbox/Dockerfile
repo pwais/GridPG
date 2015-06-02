@@ -45,13 +45,13 @@ ENV PATH $PATH:/usr/local/go/bin
 RUN echo "Test" && go version
 
 # K8s
-WORKDIR /opt/
+#WORKDIR /opt/
 
 # To use a release:
 #RUN curl https://storage.googleapis.com/kubernetes-release/release/v0.17.0/kubernetes.tar.gz | tar xzvf -
 
 # To use source:
-RUN git clone --branch release-0.17 --depth 1  https://github.com/GoogleCloudPlatform/kubernetes.git /opt/kubernetes
+#RUN git clone --branch release-0.17 --depth 1  https://github.com/GoogleCloudPlatform/kubernetes.git /opt/kubernetes
 # NB: build requires docker; must be run outside of $ docker build
 
 #ADD .kubernetes /opt/kubernetes

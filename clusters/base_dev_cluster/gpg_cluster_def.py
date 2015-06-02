@@ -18,7 +18,7 @@ class Cluster(object):
   
   @staticmethod
   def before_up(ctx):
-    config_dest = os.path.join(ctx.k8s_path, "cluster/gce/gpg-config.sh")
+    config_dest = os.path.join(ctx.opts.k8s_path, "cluster/gce/gpg-config.sh")
     ctx.run_in_shell("cp -v " + ctx.cluster_path("kube_config.sh") + " " + config_dest)
   
   @staticmethod

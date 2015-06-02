@@ -20,7 +20,7 @@ RUN apt-get update
 RUN apt-get install -y python2.7 python-pip curl wget git
 
 # Utils
-RUN apt-get install -y iftop screen time sshfs sudo lsof s3cmd vim 
+RUN apt-get install -y iftop screen time sshfs sudo lsof s3cmd vim man links 
 
 # Docker
 RUN wget -qO- https://get.docker.com/ | sh

@@ -51,7 +51,8 @@ ENABLE_NODE_LOGGING=false
 ENABLE_CLUSTER_LOGGING=false
 
 # Don't require https for our local network, nor the kubernetes master
-EXTRA_DOCKER_OPTS="--insecure-registry 10.0.0.0/8 --insecure-registry $MASTER_IP_RANGE"
+# TODO can remove the docker-private-registry thing
+EXTRA_DOCKER_OPTS="--insecure-registry 10.0.0.0/8 --insecure-registry $MASTER_IP_RANGE --insecure-registry docker-private-registry"
 
 # Let's DNS
 ENABLE_CLUSTER_DNS=true

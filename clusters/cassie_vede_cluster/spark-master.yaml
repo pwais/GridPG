@@ -10,7 +10,7 @@ spec:
     resources:
       limits:
         cpu: "1"
-    image: docker-private-registry/cv_spark
+    image: %%docker-private-registry%%/cv_spark
     args:
       - /start_master.sh
     ports:

@@ -20,13 +20,13 @@ set -o pipefail
 set -x
 
 # Keys exist, right?
-ls -lhat /root/.ssh/id_dsa_gpg_sshfs
-ls -lhat /root/.ssh/id_dsa_gpg_sshfs.pub
+ls -lhat /root/.ssh/id_dsa_gpg_buldbox_ssh
+ls -lhat /root/.ssh/id_dsa_gpg_buldbox_ssh.pub
 
-chmod 600 /root/.ssh/id_dsa_gpg_sshfs
-chmod 600 /root/.ssh/id_dsa_gpg_sshfs.pub
+chmod 600 /root/.ssh/id_dsa_gpg_buldbox_ssh
+chmod 600 /root/.ssh/id_dsa_gpg_buldbox_ssh.pub
 
-cat /root/.ssh/id_dsa_gpg_sshfs.pub > /root/.ssh/authorized_keys
+cat /root/.ssh/id_dsa_gpg_buldbox_ssh.pub > /root/.ssh/authorized_keys
 
 echo "AuthorizedKeysFile /root/.ssh/authorized_keys" >> /etc/ssh/sshd_config
 echo "We will listen for these keys on port 30022"

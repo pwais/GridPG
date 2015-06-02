@@ -6,7 +6,7 @@ metadata:
   name: cv
 spec:
   containers:
-  - image: docker-private-registry/cv_cassandra
+  - image: %%docker-private-registry%%/cv_cassandra
     name: cassandra
     ports:
     - name: cql
@@ -23,7 +23,7 @@ spec:
       value: 100M
     - name: KUBERNETES_API_PROTOCOL
       value: http
-  - image: docker-private-registry/cv_spark
+  - image: %%docker-private-registry%%/cv_spark
     args:
     - /start_worker.sh
     name: spark-worker
