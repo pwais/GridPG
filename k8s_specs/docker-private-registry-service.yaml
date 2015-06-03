@@ -2,8 +2,8 @@ kind: Service
 apiVersion: v1beta3
 metadata:
   labels:
-    name: docker-private-registry
-  name: docker-private-registry
+    name: dprs
+  name: dprs
 spec:
   ports:
     - port: 5000

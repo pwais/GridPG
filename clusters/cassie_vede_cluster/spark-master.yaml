@@ -12,7 +12,9 @@ spec:
         cpu: "1"
     image: %%docker-private-registry%%/cv_spark
     args:
-      - /start_master.sh
+      - /start-master.sh
     ports:
     - name: spark-master
       containerPort: 7077
+    - name: spark-master-webui
+      containerPort: 8080

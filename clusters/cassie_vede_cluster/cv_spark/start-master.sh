@@ -17,7 +17,8 @@
 set -e
 set -x
 
-/opt/spark/sbin/start-master.sh
+# Override k8s env var, which is a full tcp:// URI
+SPARK_MASTER_PORT=7077 /opt/spark/sbin/start-master.sh
 
 sleep infinity
 

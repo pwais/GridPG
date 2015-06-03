@@ -110,12 +110,12 @@ class ClusterContext(object):
     else:
       return self.run_in_shell("cd " + self.opts.k8s_path + " && " + cmd)
   
-  def run_k8s_create_def(self, path):
+  def run_k8s_templated_create_def(self, path):
     spec = open(path, 'r').read()
     DPR_TOKEN = "%%docker-private-registry%%"
     if DPR_TOKEN in spec:
       private_registry = self.get_docker_private_registry()
-      spec.replace(DPR_TOKEN, private_registry + ":5000")
+      spec = spec.replace(DPR_TOKEN, private_registry + ":5000")
     kubectl = os.path.join(self.opts.k8s_path, "cluster/kubectl.sh")
     cmd = kubectl + " create -f -"
     p = subprocess.Popen(cmd.split(" "), stdin=subprocess.PIPE)
@@ -156,6 +156,27 @@ class ClusterContext(object):
     if not hostIP:
       log.warn("Pod not found: " + pod_name)
     return hostIP
+  
+  def get_pod_ip(self, pod_name, wait=True):
+    # TODO: merge with get_pod_host
+    log.info("Finding pod " + pod_name + " ...")
+    if wait:
+      assert self.wait_for_pod(pod_name)
+    
+    kubectl = os.path.join(self.opts.k8s_path, "cluster/kubectl.sh")
+    r = self.run_and_get_json(kubectl + " get pod " + pod_name + " -o json")
+    if r.get("kind") != "Pod":
+      log.warn("Did not get pod: %s" % r) 
+      return None
+    if r.get("metadata", {}).get("name") != pod_name:
+      log.warn("Did not get pod with desired name: %s" % r)
+      return None
+      
+    podIP = r.get("status", {}).get("podIP")
+
+    if not podIP:
+      log.warn("Pod not found: " + pod_name)
+    return podIP
   
   def get_service_ip(self, service_name):
     log.info("Finding service " + service_name + " ...")
@@ -213,19 +234,20 @@ class ClusterContext(object):
   
   def get_docker_private_registry(self):
     if not hasattr(self, '_registry'):
-      self._registry = self.get_pod_host("docker-private-registry")
+      # TODO use dprs service portalIP
+      self._registry = self.get_pod_ip("docker-private-registry")
     return self._registry
   
   def push_to_remote_docker_registry(self, tag, reg_host=None):
     if not reg_host:
       reg_host = self.get_docker_private_registry()
     
-    self.run_in_shell("docker tag " + tag + " " + reg_host + ":5000/" + tag)
+    self.run_in_shell("docker tag -f " + tag + " " + reg_host + ":5000/" + tag)
     self.run_in_shell("docker push " + reg_host + ":5000/" + tag)
   
   def buildbox_push_to_private_reg(self, tag):
     reg_host = self.get_docker_private_registry()
-    self.exec_in_buildbox("docker tag " + tag + " " + reg_host + ":5000/" + tag)
+    self.exec_in_buildbox("docker tag -f " + tag + " " + reg_host + ":5000/" + tag)
     self.exec_in_buildbox("docker push " + reg_host + ":5000/" + tag)
   
   def buildbox_docker_build(self, remote_path, tag):
@@ -586,7 +608,8 @@ if __name__ == "__main__":
   
   if opts.deps:
     # Pull git friends
-    run_in_shell("git submodule update --init")
+    # TODO uncomment after salt hacking
+#     run_in_shell("git submodule update --init")
 
     # Build k8s
     run_in_shell(

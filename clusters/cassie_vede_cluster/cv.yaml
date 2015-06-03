@@ -25,7 +25,7 @@ spec:
       value: http
   - image: %%docker-private-registry%%/cv_spark
     args:
-    - /start_worker.sh
+    - /start-worker.sh
     name: spark-worker
     ports:
     - name: spark-workerui

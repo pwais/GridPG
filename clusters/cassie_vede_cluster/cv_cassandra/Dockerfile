@@ -39,6 +39,6 @@ ADD https://github.com/GoogleCloudPlatform/kubernetes/blob/b4b4ac4ad3e3040fb9ab1
 EXPOSE 9042
 EXPOSE 9160 
 
-ADD startup.sh startup.sh
-RUN chmod a+x startup.sh
-CMD startup.sh
+ADD startup.sh /startup.sh
+RUN chmod a+x /startup.sh
+CMD /startup.sh

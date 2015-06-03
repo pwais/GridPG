@@ -54,7 +54,7 @@ class Cluster(object):
 #       ctx.cluster_path("cv.yaml"), TODO do we need this?
       ctx.cluster_path("cv-service.yaml"))
     for path in cv_def_paths:
-      ctx.run_in_k8s("./cluster/kubectl.sh create -f " + path)
+      ctx.run_k8s_templated_create_def(path)
     ctx.log.info("... created k8s components ...")
     
     # TODO: check service health
