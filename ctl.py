@@ -233,10 +233,9 @@ class ClusterContext(object):
     return True
   
   def get_docker_private_registry(self):
-    if not hasattr(self, '_registry'):
-      # TODO use dprs service portalIP
-      self._registry = self.get_pod_ip("docker-private-registry")
-    return self._registry
+    # TODO: service & use portalIP?
+    # TODO: only wait if not ready?
+    return self.get_pod_ip("gpg-local-registry")
   
   def push_to_remote_docker_registry(self, tag, reg_host=None):
     if not reg_host:
@@ -486,7 +485,10 @@ if __name__ == "__main__":
     help="Give the adminbox image this tag [default %default]")
   config_group.add_option(
     "--buildbox-tag", default="gpg-buildbox",
-    help="Give the buildbox image this tag [default %default]")
+    help="Give the buildbox image this local tag [default %default]")
+  config_group.add_option(
+    "--buildbox-image", default="gpgadmin/gpg-buildbox",
+    help="Push/pull this (official) buildbox image [default %default]")
   config_group.add_option(
     "--registry", default=None,
     help="Use this docker registry host. By default, use the cluster's "
@@ -614,9 +616,9 @@ if __name__ == "__main__":
     # Build k8s
     run_in_shell(
       "cd deps/kubernetes && "
-      "mv cluster/saltbase/pillar/privilege.sls{,.original} && "
-      "echo \"Allowing privileged containers\" && "
-      "echo \"allow_privileged: true\" > cluster/saltbase/pillar/privilege.sls && "
+#       "mv cluster/saltbase/pillar/privilege.sls{,.original} && "
+#       "echo \"Allowing privileged containers\" && "
+#       "echo \"allow_privileged: true\" > cluster/saltbase/pillar/privilege.sls && "
       "make quick-release")
     log.info(
       "Nota bene: the k8s build process may leave behind some large "
@@ -633,8 +635,8 @@ if __name__ == "__main__":
   if opts.buildbox_build_and_push:
     # TODO: gpg docker account
     run_in_shell(
-      "docker tag -f " + opts.buildbox_tag + " pwais/hack && "
-      "docker push pwais/hack")
+      "docker tag -f " + opts.buildbox_tag + " " + opts.buildbox_image + " && "
+      "docker push " + opts.buildbox_image)
   
   if opts.adminbox_build:
     run_in_shell("cd adminbox && docker build -t " + opts.adminbox_tag + " .")

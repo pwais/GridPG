@@ -7,9 +7,6 @@ metadata:
 spec:
   containers:
   - name: docker-private-registry
-    resources:
-      limits:
-        cpu: "1"      
     image: registry
     ports:
     - name: docker-registry

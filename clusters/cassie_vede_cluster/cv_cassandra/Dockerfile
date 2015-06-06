@@ -33,7 +33,7 @@ RUN echo "deb http://www.apache.org/dist/cassandra/debian 21x main" >> /etc/apt/
 
 ADD cassandra.yaml /etc/cassandra/cassandra.yaml
 
-ADD https://github.com/GoogleCloudPlatform/kubernetes/blob/b4b4ac4ad3e3040fb9ab1c2fd1e30cb3efd0f4bd/examples/cassandra/image/kubernetes-cassandra.jar?raw=true /opt/kubernetes-cassandra.jar 
+ADD kubernetes-cassandra.jar /opt/kubernetes-cassandra.jar 
 
 # Cassandra CQL and Thrift
 EXPOSE 9042

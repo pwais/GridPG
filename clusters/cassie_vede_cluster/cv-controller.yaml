@@ -5,7 +5,7 @@ metadata:
     name: cv
   name: cv
 spec: 
-  replicas: 1
+  replicas: 2
   selector: 
     name: cv
   template: 
@@ -39,6 +39,8 @@ spec:
         ports:
         - name: spark-workerui
           containerPort: 8888
+        - name: spark-worker-webui
+          containerPort: 8081
       volumes:
       - name: data
         emptyDir: {}

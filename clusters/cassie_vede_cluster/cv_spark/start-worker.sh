@@ -17,6 +17,10 @@
 set -e
 set -x
 
+# For replicated pods, the k8s-assigned dns name currently doesn't
+# resolve cluster-wide
+export SPARK_LOCAL_HOSTNAME=$(hostname -i)
+
 /opt/spark/sbin/start-slave.sh 1 spark://spark-master:7077
 
 sleep infinity

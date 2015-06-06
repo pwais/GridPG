@@ -30,6 +30,8 @@ spec:
     ports:
     - name: spark-workerui
       containerPort: 8888
+    - name: spark-worker-webui
+      containerPort: 8081
   volumes:
     - name: data
       emptyDir: {}

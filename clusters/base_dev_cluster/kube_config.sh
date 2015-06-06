@@ -20,7 +20,7 @@ MASTER_SIZE=${MASTER_SIZE:-n1-standard-1}
 MINION_SIZE=${MINION_SIZE:-n1-standard-1}
 NUM_MINIONS=${NUM_MINIONS:-4}
 MASTER_DISK_TYPE=pd-standard
-MASTER_DISK_SIZE=${MASTER_DISK_SIZE:-100GB}
+MASTER_DISK_SIZE=${MASTER_DISK_SIZE:-20GB}
 MINION_DISK_TYPE=pd-standard
 MINION_DISK_SIZE=${MINION_DISK_SIZE:-100GB}
 
@@ -30,6 +30,7 @@ MASTER_IMAGE_PROJECT=${KUBE_GCE_MASTER_PROJECT:-google-containers}
 MINION_IMAGE=${KUBE_GCE_MINION_IMAGE:-container-vm-v20150505}
 MINION_IMAGE_PROJECT=${KUBE_GCE_MINION_PROJECT:-google-containers}
 CONTAINER_RUNTIME=docker
+RKT_VERSION=${KUBE_RKT_VERSION:-0.5.5}
 
 NETWORK=${KUBE_GCE_NETWORK:-default}
 INSTANCE_PREFIX="${KUBE_GCE_INSTANCE_PREFIX:-kubernetes}"
@@ -40,6 +41,7 @@ MASTER_IP_RANGE="${MASTER_IP_RANGE:-10.246.0.0/24}"
 CLUSTER_IP_RANGE="${CLUSTER_IP_RANGE:-10.244.0.0/16}"
 MINION_SCOPES=("storage-ro" "compute-rw" "https://www.googleapis.com/auth/monitoring" "https://www.googleapis.com/auth/logging.write")
 PORTAL_NET="10.0.0.0/16"
+SERVICE_CLUSTER_IP_RANGE="10.0.0.0/16"  # formerly PORTAL_NET
 ALLOCATE_NODE_CIDRS=true
 
 ENABLE_DOCKER_REGISTRY_CACHE=true
@@ -54,10 +56,13 @@ ENABLE_CLUSTER_LOGGING=false
 # TODO can remove the docker-private-registry thing
 EXTRA_DOCKER_OPTS="--insecure-registry 10.0.0.0/8 --insecure-registry $MASTER_IP_RANGE --insecure-registry 0.0.0.0/256 "
 
+# For buildbox
+ALLOW_PRIVILEGED=true
+
 # Let's DNS
 ENABLE_CLUSTER_DNS=true
 DNS_SERVER_IP="10.0.0.10"
-DNS_DOMAIN="kubernetes.local"
+DNS_DOMAIN="cluster.local"
 DNS_REPLICAS=1
 
-ADMISSION_CONTROL=NamespaceLifecycle,NamespaceAutoProvision,LimitRanger,SecurityContextDeny,ResourceQuota
+ADMISSION_CONTROL=NamespaceLifecycle,NamespaceExists,LimitRanger,SecurityContextDeny,ServiceAccount,ResourceQuota

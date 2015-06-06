@@ -6,11 +6,14 @@ metadata:
   name: gpg-buildbox
 spec:
   containers:
+  - name: gpg-local-registry
+    image: registry
+    ports:
+    - name: gpg-local-registry
+      hostPort: 5000  
+      containerPort: 5000  
   - name: gpg-buildbox
-    resources:
-      limits:
-        cpu: "1"      
-    image: pwais/hack # TODO: gpg account
+    image: gpgadmin/gpg-buildbox
     privileged: true
     ports:
     - name: ssh
@@ -19,7 +22,8 @@ spec:
       protocol: tcp
     # A fix to run docker (daemon) in docker: -v /dev:/dev
     # But we just run using the host's docker: -v /var/run/docker.sock:/var/run/docker.sock
-    volumeMounts:
+    #   to avoid loopback device errors
+	volumeMounts:
       - name: dockersock
         mountPath: /var/run/docker.sock
   volumes:

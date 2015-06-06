@@ -2,8 +2,8 @@ apiVersion: v1beta3
 kind: Service
 metadata: 
   labels: 
-    name: cv
-  name: cv
+    name: cassandra
+  name: cassandra
 spec: 
   ports:
   - name: cql
@@ -13,4 +13,4 @@ spec:
     port: 9160
     targetPort: 9160
   selector: 
-    name: cassandra
+    name: cv

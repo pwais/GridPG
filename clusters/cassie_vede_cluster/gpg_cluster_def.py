@@ -19,7 +19,15 @@ class Cluster(object):
   @staticmethod
   def before_up(ctx):
     config_dest = os.path.join(ctx.opts.k8s_path, "cluster/gce/gpg-config.sh")
+    ctx.log.info("Using cluster kube config")
     ctx.run_in_shell("cp -v " + ctx.cluster_path("kube_config.sh") + " " + config_dest)
+  
+    cass_k8s_jar_path = os.path.join(
+                          ctx.opts.k8s_path,
+                          "examples/cassandra/image/kubernetes-cassandra.jar")
+    cv_k8s_jar_dest = ctx.cluster_path("cv_cassandra/kubernetes-cassandra.jar")
+    ctx.log.info("Using k8s cassandra support")
+    ctx.run_in_shell("cp -v " + cass_k8s_jar_path + " " + cv_k8s_jar_dest)
   
   @staticmethod
   def k8s_up_env(ctx):
@@ -50,9 +58,10 @@ class Cluster(object):
     cv_def_paths = (
       ctx.cluster_path("spark-master.yaml"),
       ctx.cluster_path("spark-master-service.yaml"),
+      ctx.cluster_path("cv-service.yaml"),
       ctx.cluster_path("cv-controller.yaml"),
 #       ctx.cluster_path("cv.yaml"), TODO do we need this?
-      ctx.cluster_path("cv-service.yaml"))
+      )
     for path in cv_def_paths:
       ctx.run_k8s_templated_create_def(path)
     ctx.log.info("... created k8s components ...")
