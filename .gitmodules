@@ -4,3 +4,6 @@
 [submodule "deps/dk8s"]
 	path = deps/dk8s
 	url = git@gitlab.com:siawp/dk8s.git
+[submodule "clusters/cassie_vede_cluster/deps/CassieVede"]
+	path = clusters/cassie_vede_cluster/deps/CassieVede
+	url = git@gitlab.com:siawp/CassieVede.git

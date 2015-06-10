@@ -19,7 +19,9 @@ class Cluster(object):
   @staticmethod
   def before_up(ctx):
     config_dest = os.path.join(ctx.opts.k8s_path, "cluster/gce/gpg-config.sh")
-    ctx.run_in_shell("cp -v " + ctx.cluster_path("kube_config.sh") + " " + config_dest)
+    ctx.log.info("Installing cluster config:")
+    ctx.run_in_shell(
+      "cp -v " + ctx.gpg_path("k8s_specs/kube_config.sh") + " " + config_dest)
   
   @staticmethod
   def k8s_up_env(ctx):
@@ -30,11 +32,19 @@ class Cluster(object):
   @staticmethod
   def k8s_create_defs(ctx):
     return (
-      ctx.gpg_path("k8s_specs/docker-private-registry.yaml"),
-      ctx.gpg_path("k8s_specs/docker-private-registry-service.yaml"),
-      ctx.gpg_path("k8s_specs/gpg-buildbox.yaml"))
+      ctx.gpg_path("k8s_specs/gpg-buildbox.yaml"),
+      ctx.gpg_path("k8s_specs/gpg-local-registry-service.yaml"),)
   
   
   @staticmethod
   def after_up(ctx):
     ctx.buildbox_sshfs_remote_mount("/opt/GridPG", "/opt/GridPG")
+  
+  @staticmethod
+  def test_cluster(ctx):
+    ctx.log.info("Checking GridPG remote mount:")
+    ctx.exec_in_buildbox("ls -lhat /opt/GridPG/LICENSE")
+    
+    ctx.log.info("Checking docker private registry:")
+    ctx.log.info("IP: " + ctx.get_docker_private_registry())
+    

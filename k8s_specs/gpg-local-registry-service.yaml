@@ -1,0 +1,12 @@
+kind: Service
+apiVersion: v1beta3
+metadata:
+  labels:
+    name: gpg-local-registry
+  name: gpg-local-registry
+spec:
+  ports:
+    - port: 5000
+      targetPort: 5000
+  selector:
+    name: gpg-buildbox

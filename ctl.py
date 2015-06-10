@@ -52,34 +52,61 @@ def run_in_shell(cmd):
   subprocess.check_call(cmd, shell=True)
   log.info("... done")
 
-
+DEFAULT_BASE_CLUSTER_PATH = os.path.abspath("clusters/base_dev_cluster")
 
 class EmptyCluterDef(object):
   
-  @staticmethod
-  def before_up(ctx):
+  def before_up(self, ctx):
     return None
   
-  @staticmethod
-  def k8s_up_env(ctx):
+  def k8s_up_env(self, ctx):
     return {}
   
-  @staticmethod
-  def k8s_create_defs(ctx):
+  def k8s_create_defs(self, ctx):
     return tuple()
   
-  @staticmethod
-  def after_up(ctx):
+  def after_up(self, ctx):
     return None
 
+  def test_cluster(self, ctx):
+    return None
+
+class ComposedClusterDef(object):
+  
+  def __init__(self, cs):
+    self.cs = cs
+    
+  def before_up(self, ctx):
+    for c in self.cs:
+      c.before_up(ctx)
+  
+  def k8s_up_env(self, ctx):
+    evars = {}
+    for c in self.cs:
+      evars.update(c.k8s_up_env(ctx))
+    return evars
+  
+  def k8s_create_defs(self, ctx):
+    defs = []
+    for c in self.cs:
+      defs += c.k8s_create_defs(ctx)
+    return defs
+  
+  def after_up(self, ctx):
+    for c in self.cs:
+      c.after_up(ctx)
+
+  def test_cluster(self, ctx):
+    for c in self.cs:
+      c.test_cluster(ctx)
 
 
 class ClusterContext(object):
   
   gpg_base_path = os.path.abspath(".")
   
-  def __init__(self, c_cls, opts):
-    self.c = c_cls()
+  def __init__(self, c, opts):
+    self.c = c
     self.opts = opts
     self.log = log
   
@@ -97,8 +124,10 @@ class ClusterContext(object):
     log.info("... done.")
   
   def run_and_get_txt(self, cmd):
+    log.info("Running %s and reading stdout..." % cmd)
     p = subprocess.Popen(cmd.split(" "), stdout=subprocess.PIPE)
     out = p.stdout.read()
+    log.info("... done.")
     return out
   
   def run_and_get_json(self, cmd):
@@ -124,11 +153,10 @@ class ClusterContext(object):
   
   def exec_in_buildbox(self, cmd, redacted=False):
     POD = "gpg-buildbox"
-    if not hasattr(self, '_buildbox_host'):
-      self._buildbox_host = self.get_pod_host(POD)
-    buildbox_host = self._buildbox_host
+    # TODO: make faster? nowait?
+    buildbox_host = self.get_pod_host(POD)
     EXEC_IN_BUILDBOX = (
-      'cluster/kubectl.sh exec -p ' + POD + ' -c ' + POD + ' -- ')
+      'cluster/kubectl.sh exec ' + POD + ' -c ' + POD + ' -- ')
     self.run_in_k8s(EXEC_IN_BUILDBOX + cmd, redacted=redacted)
   
   def gpg_path(self, path):
@@ -137,7 +165,13 @@ class ClusterContext(object):
   def cluster_path(self, path):
     return os.path.abspath(os.path.join(self.opts.cluster, path))
   
-  def get_pod_host(self, pod_name, wait=True):
+  def get_pod(self, pod_name, wait=True, use_cache=True):
+    if not hasattr(self, '_get_pod_cache'):
+      self._get_pod_cache = {}
+    
+    if use_cache and pod_name in self._get_pod_cache:
+      return self._get_pod_cache[pod_name]
+    
     log.info("Finding pod " + pod_name + " ...")
     if wait:
       assert self.wait_for_pod(pod_name)
@@ -150,35 +184,33 @@ class ClusterContext(object):
     if r.get("metadata", {}).get("name") != pod_name:
       log.warn("Did not get pod with desired name: %s" % r)
       return None
-      
-    hostIP = r.get("status", {}).get("hostIP")
+    
+    self._get_pod_cache[pod_name] = r
+    return r
+  
+  def get_pod_host(self, pod_name, wait=True):
+    pod = self.get_pod(pod_name, wait=wait)
+    hostIP = pod.get("status", {}).get("hostIP")
 
     if not hostIP:
-      log.warn("Pod not found: " + pod_name)
+      log.warn("Can't get hostIP from pod: " + pod)
     return hostIP
   
   def get_pod_ip(self, pod_name, wait=True):
-    # TODO: merge with get_pod_host
-    log.info("Finding pod " + pod_name + " ...")
-    if wait:
-      assert self.wait_for_pod(pod_name)
-    
-    kubectl = os.path.join(self.opts.k8s_path, "cluster/kubectl.sh")
-    r = self.run_and_get_json(kubectl + " get pod " + pod_name + " -o json")
-    if r.get("kind") != "Pod":
-      log.warn("Did not get pod: %s" % r) 
-      return None
-    if r.get("metadata", {}).get("name") != pod_name:
-      log.warn("Did not get pod with desired name: %s" % r)
-      return None
-      
-    podIP = r.get("status", {}).get("podIP")
+    pod = self.get_pod(pod_name, wait=wait)
+    podIP = pod.get("status", {}).get("podIP")
 
     if not podIP:
-      log.warn("Pod not found: " + pod_name)
+      log.warn("Can't get podIP from pod: " + pod)
     return podIP
   
-  def get_service_ip(self, service_name):
+  def get_service_ip(self, service_name, use_cache=True):
+    if not hasattr(self, '_get_service_ip_cache'):
+      self._get_service_ip_cache = {}
+    
+    if use_cache and service_name in self._get_service_ip_cache:
+      return self._get_service_ip_cache[service_name]
+    
     log.info("Finding service " + service_name + " ...")
     
     kubectl = os.path.join(self.opts.k8s_path, "cluster/kubectl.sh")
@@ -194,6 +226,8 @@ class ClusterContext(object):
 
     if not portalIP:
       log.warn("Service not found: " + service_name)
+    
+    self._get_service_ip_cache[service_name] = portalIP
     return portalIP
   
   def wait_for_pod(self, pod_name, max_wait_sec=300):
@@ -233,9 +267,7 @@ class ClusterContext(object):
     return True
   
   def get_docker_private_registry(self):
-    # TODO: service & use portalIP?
-    # TODO: only wait if not ready?
-    return self.get_pod_ip("gpg-local-registry")
+    return self.get_service_ip("gpg-local-registry")
   
   def push_to_remote_docker_registry(self, tag, reg_host=None):
     if not reg_host:
@@ -379,6 +411,15 @@ class ClusterContext(object):
   def load_from(opts):
     """Load and instantiate a ClusterContext from ctl.py `opts`"""
     dir_path = opts.cluster
+    c = ClusterContext.load_clusterdef_from(dir_path)
+    if hasattr(c, 'use_default_base') and c.use_default_base:
+      base_c = ClusterContext.load_clusterdef_from(DEFAULT_BASE_CLUSTER_PATH)
+      c = ComposedClusterDef([base_c, c])
+    
+    return ClusterContext(c, opts)
+  
+  @staticmethod
+  def load_clusterdef_from(dir_path):
     assert os.path.exists(dir_path), "No cluster directory: %s" % dir_path
     f, fname, desc = imp.find_module("gpg_cluster_def", [dir_path])
     try:
@@ -387,7 +428,7 @@ class ClusterContext(object):
     finally:
       f.close()
     
-    return ClusterContext(gpg_cluster_def.Cluster, opts)
+    return gpg_cluster_def.Cluster()
   
   def run(self):
     if self.opts.up:
@@ -395,6 +436,7 @@ class ClusterContext(object):
       self.opts.k8s_up = True
       self.opts.create_entities = True
       self.opts.after_up = True
+      self.opts.test_cluster = True
 
     if self.opts.before_up:
       if hasattr(self.c, "before_up"):
@@ -414,9 +456,9 @@ class ClusterContext(object):
      
     if self.opts.create_entities:
       log.info("Creating k8s entities ...")
-      k8s_defs = tuple()
+      k8s_defs = []
       if hasattr(self.c, "k8s_create_defs"):
-        k8s_defs = k8s_defs + self.c.k8s_create_defs(self)
+        k8s_defs += self.c.k8s_create_defs(self)
       for path in k8s_defs:
         self.run_in_k8s("./cluster/kubectl.sh create -f " + path)
       log.info("... done.")
@@ -425,6 +467,12 @@ class ClusterContext(object):
       if hasattr(self.c, "after_up"):
         log.info("Running post-cluster setup ...")
         self.c.after_up(self)
+        log.info("... done.")
+
+    if self.opts.test_cluster:
+      if hasattr(self.c, "test_cluster"):
+        log.info("Running cluster tests ...")
+        self.c.test_cluster(self)
         log.info("... done.")
 
     if self.opts.in_remote_buildbox:
@@ -478,7 +526,7 @@ if __name__ == "__main__":
     "--k8s-path", default="/opt/kubernetes",
     help="Use this Kubernetes [default %default]")
   config_group.add_option(
-    "--cluster", default=os.path.abspath("clusters/base_dev_cluster"),
+    "--cluster", default=DEFAULT_BASE_CLUSTER_PATH,
     help="Path to cluster files [default %default]")
   config_group.add_option(
     "--adminbox-tag", default="gpg-adminbox",
@@ -487,7 +535,7 @@ if __name__ == "__main__":
     "--buildbox-tag", default="gpg-buildbox",
     help="Give the buildbox image this local tag [default %default]")
   config_group.add_option(
-    "--buildbox-image", default="gpgadmin/gpg-buildbox",
+    "--buildbox-image", default="gridpgadmin/gpg-buildbox",
     help="Push/pull this (official) buildbox image [default %default]")
   config_group.add_option(
     "--registry", default=None,
@@ -551,7 +599,7 @@ if __name__ == "__main__":
   cluster_group.add_option(
     "--up", default=False, action="store_true",
     help="Bring the cluster up.  Equivalent to "
-         "--before-up --k8s-up --create-entities --after-up")
+         "--before-up --k8s-up --create-entities --after-up --test-cluster")
   cluster_group.add_option(
     "--before-up", default=False, action="store_true",
     help="Run some actions before bringing up k8s")
@@ -565,6 +613,9 @@ if __name__ == "__main__":
   cluster_group.add_option(
     "--after-up", default=False, action="store_true",
     help="Run any post-creation actions (e.g. build steps)")
+  cluster_group.add_option(
+    "--test-cluster", default=False, action="store_true",
+    help="Test the completed cluster")
   cluster_group.add_option(
     "--down", default=False, action="store_true",
     help="Destroy the cluster")

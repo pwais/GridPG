@@ -18,3 +18,5 @@ spec:
       containerPort: 7077
     - name: spark-master-webui
       containerPort: 8080
+    - name: spark-app-detail
+      containerPort: 4040

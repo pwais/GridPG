@@ -41,4 +41,5 @@ ADD start-master.sh /start-master.sh
 RUN chmod a+x /start-master.sh
 ADD start-worker.sh /start-worker.sh
 RUN chmod a+x /start-worker.sh
-
+ADD test-pi.sh /test-pi.sh
+RUN chmod a+x /test-pi.sh

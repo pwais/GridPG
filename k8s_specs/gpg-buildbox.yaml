@@ -13,7 +13,7 @@ spec:
       hostPort: 5000  
       containerPort: 5000  
   - name: gpg-buildbox
-    image: gpgadmin/gpg-buildbox
+    image: gridpgadmin/gpg-buildbox
     privileged: true
     ports:
     - name: ssh
@@ -22,8 +22,8 @@ spec:
       protocol: tcp
     # A fix to run docker (daemon) in docker: -v /dev:/dev
     # But we just run using the host's docker: -v /var/run/docker.sock:/var/run/docker.sock
-    #   to avoid loopback device errors
-	volumeMounts:
+    #  to avoid loopback errors
+    volumeMounts:
       - name: dockersock
         mountPath: /var/run/docker.sock
   volumes:

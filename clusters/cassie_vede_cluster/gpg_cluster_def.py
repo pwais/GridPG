@@ -16,12 +16,10 @@ import os
 
 class Cluster(object):
   
+  use_default_base = True
+  
   @staticmethod
   def before_up(ctx):
-    config_dest = os.path.join(ctx.opts.k8s_path, "cluster/gce/gpg-config.sh")
-    ctx.log.info("Using cluster kube config")
-    ctx.run_in_shell("cp -v " + ctx.cluster_path("kube_config.sh") + " " + config_dest)
-  
     cass_k8s_jar_path = os.path.join(
                           ctx.opts.k8s_path,
                           "examples/cassandra/image/kubernetes-cassandra.jar")
@@ -31,23 +29,15 @@ class Cluster(object):
   
   @staticmethod
   def k8s_up_env(ctx):
-    return {
-      "KUBE_CONFIG_FILE": "gpg-config.sh",
-    }
+    return {}
   
   @staticmethod
   def k8s_create_defs(ctx):
-    return (
-      # Use base buildbox
-      ctx.gpg_path("k8s_specs/docker-private-registry.yaml"),
-      ctx.gpg_path("k8s_specs/docker-private-registry-service.yaml"),
-      ctx.gpg_path("k8s_specs/gpg-buildbox.yaml"))
+    return tuple()
   
   @staticmethod
   def after_up(ctx):
-    ctx.buildbox_sshfs_remote_mount("/opt/GridPG", "/opt/GridPG")
-    
-    ctx.log.info("Building CassieVede ...")
+    ctx.log.info("Building CassieVede services ...")
     ctx.buildbox_docker_build(ctx.cluster_path("cv_cassandra"), "cv_cassandra")
     ctx.buildbox_docker_build(ctx.cluster_path("cv_spark"), "cv_spark")
     ctx.buildbox_push_to_private_reg("cv_spark")
@@ -64,6 +54,28 @@ class Cluster(object):
       )
     for path in cv_def_paths:
       ctx.run_k8s_templated_create_def(path)
-    ctx.log.info("... created k8s components ...")
+    ctx.log.info("... done creating k8s components.")
     
-    # TODO: check service health
+    # It looks like we'll prolly want a pod to admin cassievede.  that or start its container in k8s
+#     ctx.log.info("... created k8s components ...")
+    
+  @staticmethod
+  def test_cluster(ctx):
+    kubectl = os.path.join(ctx.opts.k8s_path, "cluster/kubectl.sh")
+    
+    ctx.log.info("Checking for cv pods ...")
+    r = ctx.run_and_get_json(
+          kubectl + " get pods -l name=cv -o json")
+    cv_pods = r.get("items", [])
+    assert cv_pods, "No cv pods started!"
+    pod = cv_pods[0]
+    pod_name = pod["metadata"]["name"]
+    ctx.log.info("Waiting for pod " + pod_name + " to start ...")
+    ctx.get_pod(pod_name, wait=True, use_cache=False)
+    
+    ctx.log.info("Checking Cassandra connectivity ...")
+    ctx.run_in_shell(
+      kubectl + " exec " + pod_name + " -c cassandra -- nodetool status")
+    
+    ctx.log.info("Testing Spark ...")
+    ctx.run_in_shell(kubectl + " exec spark-master -- /test-pi.sh")

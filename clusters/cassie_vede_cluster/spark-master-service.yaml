@@ -12,5 +12,8 @@ spec:
     - name: spark-master-webui
       port: 8080
       targetPort: 8080
+    - name: spark-app-detail
+      port: 4040
+      targetPort: 4040
   selector:
     name: spark-master
