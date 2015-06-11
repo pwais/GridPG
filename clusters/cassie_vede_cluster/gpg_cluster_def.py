@@ -56,6 +56,7 @@ class Cluster(object):
       ctx.run_k8s_templated_create_def(path)
     ctx.log.info("... done creating k8s components.")
     
+    
     # It looks like we'll prolly want a pod to admin cassievede.  that or start its container in k8s
 #     ctx.log.info("... created k8s components ...")
     

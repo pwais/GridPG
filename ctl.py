@@ -130,6 +130,15 @@ class ClusterContext(object):
     log.info("... done.")
     return out
   
+  def run_with_stdin(self, cmd, stdin_data):
+    log.info("Running %s and sending stdin..." % cmd)
+    p = subprocess.Popen(cmd.split(" "), stdin=subprocess.PIPE)
+    p.stdin.write(stdin_data)
+    p.stdin.flush()
+    p.stdin.close()
+    p.wait()
+    log.info("... done.")
+  
   def run_and_get_json(self, cmd):
     return json.loads(self.run_and_get_txt(cmd))
   
@@ -147,16 +156,12 @@ class ClusterContext(object):
       spec = spec.replace(DPR_TOKEN, private_registry + ":5000")
     kubectl = os.path.join(self.opts.k8s_path, "cluster/kubectl.sh")
     cmd = kubectl + " create -f -"
-    p = subprocess.Popen(cmd.split(" "), stdin=subprocess.PIPE)
-    p.stdin.write(spec)
-    p.stdin.flush()
+    self.run_with_stdin(cmd, spec)
   
-  def exec_in_buildbox(self, cmd, redacted=False):
-    POD = "gpg-buildbox"
-    # TODO: make faster? nowait?
-    buildbox_host = self.get_pod_host(POD)
+  def exec_in_buildbox(self, cmd, pod="gpg-buildbox", redacted=False):
+    buildbox_host = self.get_pod_host(pod)
     EXEC_IN_BUILDBOX = (
-      'cluster/kubectl.sh exec ' + POD + ' -c ' + POD + ' -- ')
+      'cluster/kubectl.sh exec ' + pod + ' -c ' + pod + ' -- ')
     self.run_in_k8s(EXEC_IN_BUILDBOX + cmd, redacted=redacted)
   
   def gpg_path(self, path):
@@ -285,6 +290,61 @@ class ClusterContext(object):
     self.exec_in_buildbox(
       'sh -c "cd ' + remote_path + ' && docker build -t ' + tag + ' ."')
   
+  def create_custom_buildbox(self, bbox_dockerfile_path, name):
+    log.info("Creating custom buildbox Dockerfile ...")
+    outpath = bbox_dockerfile_path + ".buildbox"
+    self.exec_in_buildbox(
+      # Use sh -c so > gets run on remote machine
+      # We're running: cd gridpg && ctl.py --xlate path > outpath 
+      'sh -c "' +
+        'cd /opt/GridPG/ && ' +
+        './ctl.py ' +
+        '--xlate-to-custom-buildbox ' + bbox_dockerfile_path +
+        ' > ' + outpath + '"') 
+    
+    workdir, dfilename = os.path.split(outpath)
+    self.exec_in_buildbox(
+      'sh -c "cd ' + workdir + ' && ' +
+             'docker build -t ' + name + ' -f ' + dfilename + ' ."')
+    self.buildbox_push_to_private_reg(name)
+    
+    PODSPEC = """
+      apiVersion: v1beta3
+      kind: Pod
+      metadata:
+       name: %%name%%
+       labels:
+        name: %%name%%
+      spec:
+        containers:
+        - name: %%name%%
+          image: %%dpr%%/%%%name%%%
+          privileged: true
+          ports:
+          - name: ssh
+            containerPort: 22
+            hostPort: 30022
+            protocol: tcp
+          volumeMounts:
+            - name: dockersock
+              mountPath: /var/run/docker.sock
+        volumes:
+          - name: dockersock
+            hostPath:
+              path: /var/run/docker.sock
+    """
+  
+    spec = str(PODSPEC)
+    spec = spec.replace("%%name%%", name)
+    private_registry = self.get_docker_private_registry()
+    spec = spec.replace("%%dpr%%", private_registry + ":5000")
+    
+    kubectl = os.path.join(self.opts.k8s_path, "cluster/kubectl.sh")
+    cmd = kubectl + " create -f -"
+    self.run_with_stdin(cmd, spec)
+    
+   
+  
   ###
   ### Buildbox SSH
   ###
@@ -294,7 +354,7 @@ class ClusterContext(object):
   SSH_KEY_PATH = "/root/.ssh/id_dsa_gpg_buldbox_ssh"
   SSH_KEY_PUB_PATH = "/root/.ssh/id_dsa_gpg_buldbox_ssh.pub"
   
-  def buildbox_enable_ssh(self):
+  def buildbox_enable_ssh(self, pod="gpg-buildbox"):
     self.log.info("Setting up ssh on buildbox ...")
     
     created_new_keys = False
@@ -306,31 +366,39 @@ class ClusterContext(object):
       created_new_keys = True
     
     has_keys = False
-#     if not created_new_keys: TODO: FIXME k8s does not prop exit code properly
-#       try:
-#         self.exec_in_buildbox('ls -lhat ' + self.SSH_KEY_PATH)
-#         self.exec_in_buildbox('ls -lhat ' + self.SSH_KEY_PUB_PATH)
-#         has_keys = True
-#         log.info(
-#           "... buildbox already has keys; to re-install "
-#           "rm -rf /root/.ssh/id_dsa_gpg_sshfs* in buildbox machine "
-#           "...")
-#       except Exception:
-#         pass
+    if not created_new_keys:
+      try:
+          #k8s does not propagate the exit code correctly, so we use false 
+        self.exec_in_buildbox(
+          'ls -lhat ' + self.SSH_KEY_PATH + ' || false',
+          pod=pod)
+        self.exec_in_buildbox(
+          'ls -lhat ' + self.SSH_KEY_PUB_PATH + ' || false',
+          pod=pod)
+        has_keys = True
+        log.info(
+          "... buildbox already has keys; to re-install "
+          "rm -rf /root/.ssh/id_dsa_gpg_sshfs* in buildbox machine "
+          "...")
+      except Exception:
+        pass
       
     if not has_keys:
-      log.info("... installing ssh keys on buildbox (cmd will be redacted) ... ")
-      self.exec_in_buildbox('mkdir -p /root/.ssh')
+      log.info(
+        "... installing ssh keys on buildbox (cmd will be redacted) ... ")
+      self.exec_in_buildbox('mkdir -p /root/.ssh', pod=pod)
       for path in (self.SSH_KEY_PATH, self.SSH_KEY_PUB_PATH):
         content = open(path, 'r').read()
         # NB: we use sh -c to make the > redirect explicitly run *remotely*
         # NB: also, we use echo here because, sadly, cat | kubcetl -- tee
         # doesn't work-- it blocks indefinitely (looks like a Golang / k8s bug) 
         self.exec_in_buildbox(
-          'sh -c "echo \'' + content +  '\' > ' + path + ' "', redacted=True)
+          'sh -c "echo \'' + content +  '\' > ' + path + ' "',
+          pod=pod,
+          redacted=True)
       
       log.info("... authorizing copied key and bouncing sshd ...")
-      self.exec_in_buildbox('/opt/accept_gpg_sshfs_key.sh')
+      self.exec_in_buildbox('/opt/accept_gpg_sshfs_key.sh', pod=pod)
     
     # TODO: can we make this provider agnostic eventually?
     if self.opts.provider == "gce":
@@ -355,7 +423,7 @@ class ClusterContext(object):
         self.opts.provider)  
     
     log.info("... testing ssh ...")
-    BUILDBOX_HOST = self.get_pod_host("gpg-buildbox")
+    BUILDBOX_HOST = self.get_pod_host(pod)
     SSH_CMD_BASE = (
       "ssh -o StrictHostKeyChecking=no " + BUILDBOX_HOST + " " +
       "-p " + self.SSH_PORT + " " +
@@ -364,11 +432,16 @@ class ClusterContext(object):
     
     self.log.info("... ssh available!")
   
-  def buildbox_sshfs_remote_mount(self, local_path, remote_path=None):
+  def buildbox_sshfs_remote_mount(
+                  self,
+                  local_path,
+                  remote_path=None,
+                  pod="gpg-buildbox"):
+    
     if not remote_path:
       remote_path = local_path
     
-    self.buildbox_enable_ssh()
+    self.buildbox_enable_ssh(pod=pod)
     log.info("Mounting " + local_path + " to remote buildbox via sshfs ...")
       
     log.info("... starting tunneled sshfs ...")
@@ -376,11 +449,11 @@ class ClusterContext(object):
     # or sshfs will crash. 
     try:
       # Try to clean up after a previous sshfs attempt
-      self.exec_in_buildbox("umount " + remote_path)
+      self.exec_in_buildbox("umount " + remote_path, pod=pod)
     except Exception:
       pass
-    self.exec_in_buildbox("mkdir -p " + remote_path)
-    BUILDBOX_HOST = self.get_pod_host("gpg-buildbox")
+    self.exec_in_buildbox("mkdir -p " + remote_path, pod=pod)
+    BUILDBOX_HOST = self.get_pod_host(pod)
     SSH_CMD_BASE = (
       "ssh -o StrictHostKeyChecking=no " + BUILDBOX_HOST + " " +
       "-p " + self.SSH_PORT + " "
@@ -398,7 +471,7 @@ class ClusterContext(object):
       "localhost:" + local_path + " " + remote_path +" &")
     
     log.info("... testing remote mount ...")
-    self.exec_in_buildbox("ls -lhat " + remote_path)
+    self.exec_in_buildbox("ls -lhat " + remote_path, pod=pod)
     
     log.info("... local path mounted remotely! Done!!")
   
@@ -560,6 +633,11 @@ if __name__ == "__main__":
     "--interactive", default=False, action="store_true",
     help="Drop into an interactive python session after running all other "
          "actions")
+  local_group.add_option(
+    "--xlate-to-custom-buildbox", default=None,
+    help="Given a path to a Dockerfile or Dockerfile on stdin (pass '-'), "
+         "emit on stdout Dockerfile that can be used to create a "
+         "buildbox-compatible container.")
   option_parser.add_option_group(local_group)
   
   adminbox_group = OptionGroup(
@@ -710,6 +788,27 @@ if __name__ == "__main__":
 
   if opts.adminbox_rm:
     run_in_shell("docker kill gpg-adminbox && docker rm gpg-adminbox")
+
+  if opts.xlate_to_custom_buildbox is not None:
+    dockerfile_content = ""
+    if opts.xlate_to_custom_buildbox == "-":
+      dockerfile_content = sys.stdin.read()
+    else:
+      dockerfile_content = open(opts.xlate_to_custom_buildbox, 'r').read()
+    
+    lines = dockerfile_content.split("\n")
+    for i in range(len(lines)):
+      if lines[i].startswith("FROM"):
+        lines[i] = "FROM " + opts.buildbox_image
+      elif lines[i].startswith("CMD") or lines[i].startswith("ENTRYPOINT"):
+        # Skip container's startup
+        lines[i] = "" 
+    
+    # Use buildbox startup
+    lines.append("CMD /opt/startup.sh")
+    
+    custom_dockerfile = "\n".join(lines)
+    print >>sys.stdout, custom_dockerfile
 
   c = ClusterContext.load_from(opts)
   c.run()
