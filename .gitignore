@@ -1,2 +1,6 @@
 *.DS_Store
 *.pyc
+
+clusters/cassie_vede_cluster/cv_cassandra/kubernetes-cassandra.jar
+clusters/cassie_vede_cluster/deps/CassieVede*
+

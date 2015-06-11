@@ -318,7 +318,7 @@ class ClusterContext(object):
       spec:
         containers:
         - name: %%name%%
-          image: %%dpr%%/%%%name%%%
+          image: %%dpr%%/%%name%%
           privileged: true
           ports:
           - name: ssh

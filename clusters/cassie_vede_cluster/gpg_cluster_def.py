@@ -26,6 +26,13 @@ class Cluster(object):
     cv_k8s_jar_dest = ctx.cluster_path("cv_cassandra/kubernetes-cassandra.jar")
     ctx.log.info("Using k8s cassandra support")
     ctx.run_in_shell("cp -v " + cass_k8s_jar_path + " " + cv_k8s_jar_dest)
+    
+    
+    dest = ctx.cluster_path("deps/CassieVede")
+    if not os.path.exists(dest):
+      ctx.log.info("Fetching CassieVede source")
+      ctx.run_in_shell(
+        "git clone git@gitlab.com:siawp/CassieVede.git " + dest)
   
   @staticmethod
   def k8s_up_env(ctx):
@@ -55,10 +62,50 @@ class Cluster(object):
     for path in cv_def_paths:
       ctx.run_k8s_templated_create_def(path)
     ctx.log.info("... done creating k8s components.")
+
+    ctx.log.info("Building CassieVede buildbox ...")
+    CV_BUILDBOX = "cv-buildbox"
+    docker_path = ctx.cluster_path("deps/CassieVede/cloud/Dockerfile")
+    ctx.create_custom_buildbox(docker_path, CV_BUILDBOX)
     
+    ctx.log.info("... mounting CassieVede source ...")
+    cv_src = ctx.cluster_path("deps/CassieVede")
+    ctx.buildbox_sshfs_remote_mount(
+          cv_src,
+          remote_path="/opt/.CassieVede", # We'll need to hide some paths
+          pod=CV_BUILDBOX)
     
-    # It looks like we'll prolly want a pod to admin cassievede.  that or start its container in k8s
-#     ctx.log.info("... created k8s components ...")
+    def exec_in_cvbb(cmd):
+      ctx.exec_in_buildbox(cmd, pod=CV_BUILDBOX)
+    
+    # Create a directory tree similar to CassieVede's docker volume mount setup
+    exec_in_cvbb("mkdir -p /opt/CassieVede")
+    exec_in_cvbb("mkdir -p /opt/CassieVede/project")
+    # We have to copy .git or else git will download & write to the
+    # sshfs-mounted /opt/.CassieVede directory (which is very slow!)
+    exec_in_cvbb("cp -r /opt/.CassieVede/.git /opt/CassieVede/")
+    LINK_PATHS = (
+      ".gitmodules",
+      "build.sbt",
+      "project/plugins.sbt",
+      "src",
+      "LICENSE",
+      "bootstrap.py")
+    for p in LINK_PATHS:
+      exec_in_cvbb("ln -s /opt/.CassieVede/" + p + " /opt/CassieVede/" + p)
+    
+    ctx.log.info("... building CassieVede ...")
+    exec_in_cvbb("cd /opt/CassieVede && ./bootstrap.py --all")
+    
+    ctx.log.info("... initializing CassieVede tables in Cassandra ...")
+    ctx.get_pod("spark-master", wait=True, use_cache=False)
+    # TODO: block until cassandra is up ...
+    exec_in_cvbb(
+      "./bootstrap.py "
+        "--in-spark-submit "
+          "--spark-master spark-master "
+          "--cassandra-host cassandra "
+            "-- --create-keyspace")
     
   @staticmethod
   def test_cluster(ctx):
