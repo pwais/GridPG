@@ -1,5 +1,5 @@
 kind: Service
-apiVersion: v1beta3
+apiVersion: v1
 metadata:
   labels:
     name: spark-master
@@ -9,10 +9,10 @@ spec:
     - name: spark-master
       port: 7077
       targetPort: 7077
-    - name: spark-master-webui
+    - name: spark-m-webui
       port: 8080
       targetPort: 8080
-    - name: spark-app-detail
+    - name: spark-app
       port: 4040
       targetPort: 4040
   selector:

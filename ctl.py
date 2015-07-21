@@ -245,7 +245,7 @@ class ClusterContext(object):
       r = self.run_and_get_json(kubectl + " get pod " + pod_name + " -o json")
       log.debug("k8s response: %s" % r)
             
-      conds = r.get("status", {}).get("Condition", [])
+      conds = r.get("status", {}).get("conditions", [])
       running |= any(
         c.get("type") == "Ready" and c.get("status") == "True"
         for c in conds)
@@ -264,8 +264,8 @@ class ClusterContext(object):
       
     if not running:
       log.error("Failed to get pod " + pod_name + "!!! Check status below:")
-      self.run_in_k8s("describe pod " + pod_name)
-      self.run_in_k8s("log " + pod_name)
+      self.run_in_k8s("./cluster/kubectl.sh describe pod " + pod_name)
+      self.run_in_k8s("./cluster/kubectl.sh log " + pod_name)
       return False
     
     log.info("... pod " + pod_name + " up!")
@@ -566,7 +566,7 @@ class ClusterContext(object):
   
     
     
-    
+    # TODO fixme
     # gcloud compute firewall-rules create --allow=tcp:10022 --target-tags=kubernetes-minion kubernetes-minion-10022
     
     # adminbox must listen on 10022 /etc/ssh/sshd_config
@@ -711,18 +711,7 @@ if __name__ == "__main__":
   #       run Travis??!  
   # -- add reg repo to use.  gridpg will commit tags to that repo
   # -- add --insecure-reg to the master machine's docker.  
-  # -- 
-#   reg_group = OptionGroup(
-#                     option_parser,
-#                     "Registry",
-#                     "Local Docker Registry Actions")
-#   reg_group.add_option(
-#     "--reg-up", default=False, action="store_true",
-#     help="Bring up the local (private) Docker registry")
-#   reg_group.add_option(
-#     "--reg-down", default=False, action="store_true",
-#     help="Bring down the local (private) Docker registry")
-#   option_parser.add_option_group(reg_group)
+  # -- TODO deleteme
   
   opts, args = option_parser.parse_args()
   
@@ -739,21 +728,17 @@ if __name__ == "__main__":
   
   if opts.deps:
     # Pull git friends
-    # TODO uncomment after salt hacking
-#     run_in_shell("git submodule update --init")
+    run_in_shell("git submodule update --init")
 
     # Build k8s
-    run_in_shell(
-      "cd deps/kubernetes && "
-#       "mv cluster/saltbase/pillar/privilege.sls{,.original} && "
-#       "echo \"Allowing privileged containers\" && "
-#       "echo \"allow_privileged: true\" > cluster/saltbase/pillar/privilege.sls && "
-      "make quick-release")
-    log.info(
-      "Nota bene: the k8s build process may leave behind some large "
-      "(and dangling) docker images.  Run "
-      "  docker rmi $(docker images -f \"dangling=true\" -q) "
-      "to free up some disk space.")
+    K8S_TAR = "deps/kubernetes/_output/release-tars/kubernetes.tar.gz"
+    if not os.path.exists(K8S_TAR):
+      run_in_shell("cd deps/kubernetes && make quick-release")
+      log.info(
+        "Nota bene: the k8s build process may leave behind some large "
+        "(and dangling) docker images.  Run "
+        "  docker rmi $(docker images -f \"dangling=true\" -q) "
+        "to free up some disk space.")
 
   if opts.clean:
     run_in_shell("rm -rf deps/*")
@@ -777,7 +762,7 @@ if __name__ == "__main__":
       "-v " + os.path.abspath(".") + ":/opt/GridPG " +
       "-v " + os.path.abspath("deps/kubernetes") + ":/opt/kubernetes " +
       "-w /opt/GridPG " + opts.adminbox_tag)
-#     log.info("Building k8s ...")
+#     log.info("Building k8s ...") TODO deleteme
 #     run_in_shell("docker exec gpg-adminbox /opt/build_k8s.sh")
 #     log.info("... done building k8s")
   

@@ -15,9 +15,9 @@
 import os
 
 class Cluster(object):
-  
+
   use_default_base = True
-  
+
   @staticmethod
   def before_up(ctx):
     cass_k8s_jar_path = os.path.join(
@@ -26,18 +26,18 @@ class Cluster(object):
     cv_k8s_jar_dest = ctx.cluster_path("cv_cassandra/kubernetes-cassandra.jar")
     ctx.log.info("Using k8s cassandra support")
     ctx.run_in_shell("cp -v " + cass_k8s_jar_path + " " + cv_k8s_jar_dest)
-    
-    
+
+
     dest = ctx.cluster_path("deps/CassieVede")
     if not os.path.exists(dest):
       ctx.log.info("Fetching CassieVede source")
       ctx.run_in_shell(
         "git clone git@gitlab.com:siawp/CassieVede.git " + dest)
-  
+
   @staticmethod
   def k8s_up_env(ctx):
     return {}
-  
+
   @staticmethod
   def k8s_create_defs(ctx):
     return tuple()
