@@ -192,13 +192,47 @@ class ClusterContext(object):
     
     self._get_pod_cache[pod_name] = r
     return r
-  
+
+  def get_nodes(self, use_cache=True):
+    if use_cache and hasattr(self, '_get_nodes_cache'):
+      return self._get_nodes_cache
+    
+    kubectl = os.path.join(self.opts.k8s_path, "cluster/kubectl.sh")
+    r = self.run_and_get_json(kubectl + " get nodes -o json")
+    nodes = r.get("items", [])
+    log.info("Got info on %s nodes", len(nodes))
+    self._get_nodes_cache = nodes
+    return self._get_nodes_cache
+    
+
   def get_pod_host(self, pod_name, wait=True):
     pod = self.get_pod(pod_name, wait=wait)
-    hostIP = pod.get("status", {}).get("hostIP")
+    
+    # k8s v1.0 now returns internal, virtual IPs for hostIP :P
+    # So we have to find the node associated with the pod host
+    # in a backwards manner
+    
+    hostInternalIP = pod.get("status", {}).get("hostIP")
+    log.info("Looking for node who owns internal ip " + hostInternalIP)
+    nodes = self.get_nodes()
+    hostIP = None
+    for n in nodes:
+      if n.get("kind") == "Node":
+        addrs = n.get("status", {}).get("addresses", [])
+        intIP = None
+        extIP = None
+        for addr in addrs:
+          if addr.get("type") == "InternalIP":
+            intIP = addr.get("address")
+          elif addr.get("type") == "ExternalIP":
+            extIP = addr.get("address")
+        if intIP == hostInternalIP:
+          hostIP = extIP
+          log.info("Pod is on host %s" % n.get("metadata", {}).get("name", ""))
+          break
 
     if not hostIP:
-      log.warn("Can't get hostIP from pod: " + pod)
+      log.warn("Can't get hostIP for pod: %s" % pod)
     return hostIP
   
   def get_pod_ip(self, pod_name, wait=True):
