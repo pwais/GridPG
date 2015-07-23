@@ -261,13 +261,13 @@ class ClusterContext(object):
       log.warn("Did not get service with desired name: %s" % r)
       return None
       
-    portalIP = r.get("spec", {}).get("portalIP")
+    clusterIP = r.get("spec", {}).get("clusterIP")
 
-    if not portalIP:
+    if not clusterIP:
       log.warn("Service not found: " + service_name)
     
-    self._get_service_ip_cache[service_name] = portalIP
-    return portalIP
+    self._get_service_ip_cache[service_name] = clusterIP
+    return clusterIP
   
   def wait_for_pod(self, pod_name, max_wait_sec=300):
     log.info("Waiting for pod " + pod_name + " ...")
@@ -343,7 +343,7 @@ class ClusterContext(object):
     self.buildbox_push_to_private_reg(name)
     
     PODSPEC = """
-      apiVersion: v1beta3
+      apiVersion: v1
       kind: Pod
       metadata:
        name: %%name%%
@@ -353,12 +353,13 @@ class ClusterContext(object):
         containers:
         - name: %%name%%
           image: %%dpr%%/%%name%%
-          privileged: true
+          securityContext:
+            privileged: true
           ports:
           - name: ssh
             containerPort: 22
             hostPort: 30022
-            protocol: tcp
+            protocol: TCP
           volumeMounts:
             - name: dockersock
               mountPath: /var/run/docker.sock

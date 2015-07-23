@@ -23,7 +23,9 @@ RUN apt-get install -y python2.7 python-pip curl wget git
 RUN apt-get install -y iftop screen time sshfs sudo lsof s3cmd vim man links 
 
 # Docker
-RUN wget -qO- https://get.docker.com/ | sh
+# TODO: upgrade to current docker when k8s upgrades their images
+#RUN wget -qO- https://get.docker.com/ | sh
+RUN wget -qO- https://get.docker.com/ | sed -r 's/apt-get install -y -q lxc-docker/apt-get install -y -q lxc-docker-1.6.0/g' | sh
 
 # SSH
 RUN apt-get -y install openssh-server

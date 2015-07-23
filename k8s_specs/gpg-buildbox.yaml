@@ -14,7 +14,8 @@ spec:
       containerPort: 5000  
   - name: gpg-buildbox
     image: gridpgadmin/gpg-buildbox
-    privileged: true
+    securityContext:
+      privileged: true
     ports:
     - name: ssh
       containerPort: 22

@@ -15,9 +15,9 @@
 import os
 
 class Cluster(object):
-
+  
   use_default_base = True
-
+  
   @staticmethod
   def before_up(ctx):
     cass_k8s_jar_path = os.path.join(
@@ -26,18 +26,18 @@ class Cluster(object):
     cv_k8s_jar_dest = ctx.cluster_path("cv_cassandra/kubernetes-cassandra.jar")
     ctx.log.info("Using k8s cassandra support")
     ctx.run_in_shell("cp -v " + cass_k8s_jar_path + " " + cv_k8s_jar_dest)
-
-
+    
+    
     dest = ctx.cluster_path("deps/CassieVede")
     if not os.path.exists(dest):
       ctx.log.info("Fetching CassieVede source")
       ctx.run_in_shell(
         "git clone git@gitlab.com:siawp/CassieVede.git " + dest)
-
+  
   @staticmethod
   def k8s_up_env(ctx):
     return {}
-
+  
   @staticmethod
   def k8s_create_defs(ctx):
     return tuple()
@@ -95,17 +95,18 @@ class Cluster(object):
       exec_in_cvbb("ln -s /opt/.CassieVede/" + p + " /opt/CassieVede/" + p)
     
     ctx.log.info("... building CassieVede ...")
-    exec_in_cvbb("cd /opt/CassieVede && ./bootstrap.py --all")
+    exec_in_cvbb('sh -c "cd /opt/CassieVede && ./bootstrap.py --all"')
     
     ctx.log.info("... initializing CassieVede tables in Cassandra ...")
     ctx.get_pod("spark-master", wait=True, use_cache=False)
     # TODO: block until cassandra is up ...
     exec_in_cvbb(
-      "./bootstrap.py "
-        "--in-spark-submit "
-          "--spark-master spark-master "
-          "--cassandra-host cassandra "
-            "-- --create-keyspace")
+      'sh -c "cd /opt/CassieVede && '
+        './bootstrap.py '
+          '--in-spark-submit '
+            '--spark-master spark-master '
+            '--cassandra-host cassandra '
+              '-- --create-keyspace"')
     
   @staticmethod
   def test_cluster(ctx):

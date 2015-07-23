@@ -15,6 +15,9 @@ gcloud compute instances create gpg-deploy-host --image container-vm-v20150505
 ```$ gcloud auth login```
 ```$ gcloud config set project PROJECT_ID```
 
+Make sure GCE is enabled for your project; in the GCE Web Console, click on
+Compute > Compute Engine > VM instances to force-enable GCE for the project.
+
 * start a gce cluster with docker reg in gce
 * run a test of pushing an image to the docker reg
 * figure out sshfs tunnel
