@@ -128,3 +128,9 @@ class Cluster(object):
     
     ctx.log.info("Testing Spark ...")
     ctx.run_in_shell(kubectl + " exec spark-master -- /test-pi.sh")
+    
+    ctx.log.info(
+      "Now you can load data using CassieVede, e.g. from the cv-buildbox, "
+      "in /opt/CassieVede, "
+      "./bootstrap.py --cassandra-host=cassandra --spark-master=spark-master "
+      "--in-spark-submit -- --std-dataset cifar10 --load")
