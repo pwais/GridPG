@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ReplicationController
+metadata:
+ name: gpg-buildbox
+ labels:
+  name: gpg-buildbox
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: gpg-buildbox
+    spec:
+      containers:
+      - name: gpg-local-registry
+        image: registry
+        ports:
+        - name: gpg-local-reg
+          hostPort: 5000  
+          containerPort: 5000  
+      - name: gpg-buildbox
+        image: gridpgadmin/gpg-buildbox
+        privileged: true
+        ports:
+        - name: ssh
+          containerPort: 22
+          hostPort: 30022
+          protocol: TCP
+        # A fix to run docker (daemon) in docker: -v /dev:/dev
+        # But we just run using the host's docker: -v /var/run/docker.sock:/var/run/docker.sock
+        #  to avoid loopback errors
+        volumeMounts:
+          - name: dockersock
+            mountPath: /var/run/docker.sock
+      volumes:
+        - name: dockersock
+          hostPath:
+            path: /var/run/docker.sock
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gpg-buildbox-svc
+  labels:
+    name: gpg-buildbox
+spec:
+  type: NodePort
+  ports:
+  - port: 30022
+    nodePort: 30022
+    protocol: TCP
+    name: ssh
+  selector:
+    name: gpg-buildbox

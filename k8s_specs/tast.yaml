@@ -1,0 +1,10 @@
+apiVersion: v1beta3
+kind: Pod
+metadata:
+  labels:
+    name: tasty
+  name: tasty
+spec:
+  containers:
+  - name: tasty
+    image: dprs.default.kubernetes.local:5000/bb

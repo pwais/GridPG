@@ -1,0 +1,20 @@
+{
+  "id": "docker-private-registry",
+  "kind": "Pod",
+  "apiVersion": "v1beta1",
+  "desiredState": {
+    "manifest": {
+      "version": "v1beta1",
+      "id": "docker-private-registry",
+      "containers": [{
+        "name": "docker-private-registry",
+        "image": "registry",
+        "cpu": 100,
+        "ports": [{ "containerPort": 5000 }]
+      }]
+    }
+  },
+  "labels": {
+    "name": "docker-private-registry"
+  }
+}
